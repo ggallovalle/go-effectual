@@ -1,0 +1,37 @@
+[tasks.build]
+description = "Build the project"
+run = "go build ./..."
+
+[tasks.dev]
+description = "Run dev (placeholder)"
+run = "echo 'No dev server for this project'"
+
+[tasks.lint]
+description = "Lint with golangci-lint and check for dead code"
+run = """
+golangci-lint run
+"""
+
+[tasks.check]
+description = "Type check with go"
+run = "go vet ./..."
+
+[tasks.test]
+description = "Run all tests"
+run = "go test ./..."
+
+[tasks.test-coverage]
+description = "Run test coverage"
+run = "go test -coverprofile=coverage.out ./... && go tool cover -html=coverage.out"
+
+[tasks.lint-commit]
+description = "Lint a commit message file"
+usage = 'arg "<file>" help="Path to commit message file"'
+run = "go tool commitlint lint --edit ${usage_file?}"
+
+[tasks.setup-lefthook]
+description = "Install lefthook git hooks"
+run = "go tool lefthook install"
+
+[shell_alias]
+goroot = "cd {{config_root}}"
