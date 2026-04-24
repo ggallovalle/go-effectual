@@ -1,10 +1,10 @@
-package std_test
+package effectual_test
 
 import (
 	"testing"
 
 	"github.com/Shopify/go-lua"
-	sut "github.com/ggallovalle/go-effectual/std"
+	sut "github.com/ggallovalle/go-effectual"
 	"github.com/stretchr/testify/assert"
 )
 

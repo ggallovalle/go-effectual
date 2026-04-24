@@ -1,4 +1,4 @@
-package std
+package effectual
 
 import "github.com/Shopify/go-lua"
 

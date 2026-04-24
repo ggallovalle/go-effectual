@@ -59,7 +59,7 @@ func tableToSlogAttrs(l *lua.State, index int) []slog.Attr {
 		l.PushNil()
 		for l.Next(index) {
 			if key, ok := l.ToString(-2); ok {
-				value := ConvertLuaToAny(l, -1)
+				value := effectual.ConvertLuaToAny(l, -1)
 				if value != nil {
 					attrs = append(attrs, slog.Any(key, value))
 				}
