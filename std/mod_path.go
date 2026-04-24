@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"text/template"
 
 	"github.com/Shopify/go-lua"
 	"github.com/ggallovalle/go-effectual"
@@ -565,49 +566,106 @@ func pathLibrary(sep string) []lua.RegistryFunction {
 	}
 }
 
-func pathModAnnotations(sep string) string {
-	return `---@meta std.path
+var pathAnnotationsTmpl = template.Must(template.New("PathAnnotations").Parse(`---@meta {{.module}}
 
----@class (exact) std.path.PathBuf : userdata
----@operator div(std.path.PathBuf|string): std.path.PathBuf
----@operator concat(std.path.PathBuf|string): string
----@field parent std.path.PathBuf|nil
+---@class (exact) {{.PathBuf}} : userdata
+---@operator div({{.PathBuf}}|string): {{.PathBuf}}
+---@operator concat({{.PathBuf}}|string): string
+---@field parent {{.PathBuf}}|nil
 ---@field components string[]
----@field ancestors std.path.PathBuf[]
+---@field ancestors {{.PathBuf}}[]
 ---@field file_name string|nil
 ---@field extension string|nil
 ---@field file_stem string|nil
 ---@field has_root boolean
 ---@field is_relative boolean
 ---@field is_absolute boolean
+local PathBuf = {}
+
+--- Appends the given path segments to self, returning a new PathBuf
+---@param path string
+function PathBuf:push(path) end
+
+--- Removes the last path component from self, returning true on success
+---@return boolean
+function PathBuf:pop() end
+
+--- Joins self with the given path, returning a new PathBuf. Absolute paths replace self
+---@param path string
+---@return {{.PathBuf}}
+function PathBuf:join(path) end
+
+--- Returns true if self ends with the given path segment
+---@param child string
+---@return boolean
+function PathBuf:ends_with(child) end
+
+--- Returns true if self starts with the given path prefix
+---@param base string
+---@return boolean
+function PathBuf:starts_with(base) end
+
+--- Strips the given prefix from self, returning a new PathBuf or an error
+---@param prefix string
+---@return {{.PathBuf}}?
+---@return string? Error message if prefix is not found
+function PathBuf:strip_prefix(prefix) end
+
+--- Sets the file extension, returning a new PathBuf with the changed extension
+---@param ext string
+---@return {{.PathBuf}}
+function PathBuf:with_extension(ext) end
+
+--- Sets the file name component, returning a new PathBuf
+---@param name string
+---@return {{.PathBuf}}
+function PathBuf:with_file_name(name) end
+
 local path = {}
 
 ---@type string
-path.MAIN_SEPARATOR = "` + sep + `"
+path.MAIN_SEPARATOR = "{{.sep}}"
 
+--- Creates a new PathBuf from the given path string
 ---@param value string
----@return std.path.PathBuf
+---@return {{.PathBuf}}
 function path.new(value) end
 
----@param ... string|std.path.PathBuf
----@return std.path.PathBuf
+--- Joins multiple path segments together, returning a new PathBuf
+---@param ... string|{{.PathBuf}}
+---@return {{.PathBuf}}
 function path.join(...) end
 
----@param path string|std.path.PathBuf
----@return std.path.PathBuf?
----@return string? Error message if error
+--- Converts the given path to an absolute path based on the current working directory
+---@param path string|{{.PathBuf}}
+---@return {{.PathBuf}}?
+---@return string? Error message if path is empty
 function path.absolute(path) end
 
+---@class {{.module}}.posix : {{.module}}
+local posix = {}
+
+---@class {{.module}}.win32 : {{.module}}
+local win32 = {}
+
 return path
-`
-}
+`))
 
 func (lib *pathMod) Name() string {
 	return lib.name
 }
 
 func (lib *pathMod) Annotations() string {
-	return pathModAnnotations(lib.sep)
+	data := map[string]string{
+		"module":  lib.name,
+		"PathBuf": lib.name + ".PathBuf",
+		"sep":     lib.sep,
+	}
+	var buf strings.Builder
+	if err := pathAnnotationsTmpl.Execute(&buf, data); err != nil {
+		return ""
+	}
+	return buf.String()
 }
 
 func (lib *pathMod) Open(l *lua.State) int {
