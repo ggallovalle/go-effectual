@@ -316,3 +316,288 @@ func Test_LibGoPath(t *testing.T) {
 		assert.NoError(t, err)
 	})
 }
+
+func Test_LibGoPathPosixWin32(t *testing.T) {
+	l := lua.NewState()
+	lua.OpenLibraries(l)
+	effectual.LuaModOpen(l, sut.MakeModPath())
+
+	t.Run("MAIN_SEPARATOR constants", func(t *testing.T) {
+		err := lua.DoString(l, `
+			local path = require("std.path")
+			assert(path.posix.MAIN_SEPARATOR == "/")
+			assert(path.win32.MAIN_SEPARATOR == "\\")
+		`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("posix path construction", func(t *testing.T) {
+		err := lua.DoString(l, `
+			local path = require("std.path")
+			local p = path.posix.new("foo/bar")
+			assert(tostring(p) == "foo/bar")
+			assert(tostring(p:join("baz")) == "foo/bar/baz")
+		`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("win32 path construction", func(t *testing.T) {
+		err := lua.DoString(l, `
+			local path = require("std.path")
+			local p = path.win32.new("foo\\bar")
+			assert(tostring(p) == "foo\\bar")
+			assert(tostring(p:join("baz")) == "foo\\bar\\baz")
+		`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("posix div operator", func(t *testing.T) {
+		err := lua.DoString(l, `
+			local path = require("std.path")
+			local p = path.posix.new("foo")
+			local joined = p / "bar"
+			assert(tostring(joined) == "foo/bar")
+		`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("win32 div operator", func(t *testing.T) {
+		err := lua.DoString(l, `
+			local path = require("std.path")
+			local p = path.win32.new("foo")
+			local joined = p / "bar"
+			assert(tostring(joined) == "foo\\bar")
+		`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("posix components", func(t *testing.T) {
+		err := lua.DoString(l, `
+			local path = require("std.path")
+			local p = path.posix.new("/a/b/c")
+			local comps = p.components
+			assert(#comps == 4)
+			assert(comps[1] == "/")
+			assert(comps[2] == "a")
+			assert(comps[3] == "b")
+			assert(comps[4] == "c")
+		`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("win32 components", func(t *testing.T) {
+		err := lua.DoString(l, `
+			local path = require("std.path")
+			local p = path.win32.new("\\a\\b\\c")
+			local comps = p.components
+			assert(#comps == 4)
+			assert(comps[1] == "\\")
+			assert(comps[2] == "a")
+			assert(comps[3] == "b")
+			assert(comps[4] == "c")
+		`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("posix ancestors", func(t *testing.T) {
+		err := lua.DoString(l, `
+			local path = require("std.path")
+			local p = path.posix.new("/a/b/c")
+			local ancs = p.ancestors
+			assert(#ancs == 4)
+			assert(tostring(ancs[1]) == "/a/b/c")
+			assert(tostring(ancs[2]) == "/a/b")
+			assert(tostring(ancs[3]) == "/a")
+			assert(tostring(ancs[4]) == "/")
+		`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("win32 ancestors", func(t *testing.T) {
+		err := lua.DoString(l, `
+			local path = require("std.path")
+			local p = path.win32.new("\\a\\b\\c")
+			local ancs = p.ancestors
+			assert(#ancs == 4)
+			assert(tostring(ancs[1]) == "\\a\\b\\c")
+			assert(tostring(ancs[2]) == "\\a\\b")
+			assert(tostring(ancs[3]) == "\\a")
+			assert(tostring(ancs[4]) == "\\")
+		`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("posix ends_with", func(t *testing.T) {
+		err := lua.DoString(l, `
+			local path = require("std.path")
+			local p = path.posix.new("/foo/bar")
+			assert(p:ends_with("bar") == true)
+			assert(p:ends_with("foo/bar") == true)
+			assert(p:ends_with("/bar") == false)
+			assert(p:ends_with("\\bar") == false)
+		`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("win32 ends_with", func(t *testing.T) {
+		err := lua.DoString(l, `
+			local path = require("std.path")
+			local p = path.win32.new("\\foo\\bar")
+			assert(p:ends_with("bar") == true)
+			assert(p:ends_with("foo\\bar") == true)
+			assert(p:ends_with("\\bar") == false)
+			assert(p:ends_with("/bar") == false)
+		`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("posix starts_with", func(t *testing.T) {
+		err := lua.DoString(l, `
+			local path = require("std.path")
+			local p = path.posix.new("/foo/bar")
+			assert(p:starts_with("/foo") == true)
+			assert(p:starts_with("/foo/") == true)
+			assert(p:starts_with("\\foo") == false)
+		`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("win32 starts_with", func(t *testing.T) {
+		err := lua.DoString(l, `
+			local path = require("std.path")
+			local p = path.win32.new("\\foo\\bar")
+			assert(p:starts_with("\\foo") == true)
+			assert(p:starts_with("\\foo\\") == true)
+			assert(p:starts_with("/foo") == false)
+		`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("posix is_absolute", func(t *testing.T) {
+		err := lua.DoString(l, `
+			local path = require("std.path")
+			local abs = path.posix.new("/foo")
+			local rel = path.posix.new("foo")
+			assert(abs.is_absolute == true)
+			assert(abs.has_root == true)
+			assert(rel.is_absolute == false)
+			assert(rel.has_root == false)
+		`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("win32 is_absolute", func(t *testing.T) {
+		err := lua.DoString(l, `
+			local path = require("std.path")
+			local abs = path.win32.new("\\foo")
+			local rel = path.win32.new("foo")
+			assert(abs.is_absolute == true)
+			assert(abs.has_root == true)
+			assert(rel.is_absolute == false)
+			assert(rel.has_root == false)
+		`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("posix push and pop", func(t *testing.T) {
+		err := lua.DoString(l, `
+			local path = require("std.path")
+			local p = path.posix.new("/foo")
+			p:push("bar")
+			assert(tostring(p) == "/foo/bar")
+			assert(p:pop() == true)
+			assert(tostring(p) == "/foo")
+		`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("win32 push and pop", func(t *testing.T) {
+		err := lua.DoString(l, `
+			local path = require("std.path")
+			local p = path.win32.new("\\foo")
+			p:push("bar")
+			assert(tostring(p) == "\\foo\\bar")
+			assert(p:pop() == true)
+			assert(tostring(p) == "\\foo")
+		`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("posix with_extension", func(t *testing.T) {
+		err := lua.DoString(l, `
+			local path = require("std.path")
+			local p = path.posix.new("/foo/bar.txt")
+			local newp = p:with_extension("md")
+			assert(tostring(newp) == "/foo/bar.md")
+		`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("win32 with_extension", func(t *testing.T) {
+		err := lua.DoString(l, `
+			local path = require("std.path")
+			local p = path.win32.new("\\foo\\bar.txt")
+			local newp = p:with_extension("md")
+			assert(tostring(newp) == "\\foo\\bar.md")
+		`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("posix with_file_name", func(t *testing.T) {
+		err := lua.DoString(l, `
+			local path = require("std.path")
+			local p = path.posix.new("/foo/bar.txt")
+			local newp = p:with_file_name("baz.md")
+			assert(tostring(newp) == "/foo/baz.md")
+		`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("win32 with_file_name", func(t *testing.T) {
+		err := lua.DoString(l, `
+			local path = require("std.path")
+			local p = path.win32.new("\\foo\\bar.txt")
+			local newp = p:with_file_name("baz.md")
+			assert(tostring(newp) == "\\foo\\baz.md")
+		`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("posix file_name", func(t *testing.T) {
+		err := lua.DoString(l, `
+			local path = require("std.path")
+			local p = path.posix.new("/foo/bar.txt")
+			assert(p.file_name == "bar.txt")
+		`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("win32 file_name", func(t *testing.T) {
+		err := lua.DoString(l, `
+			local path = require("std.path")
+			local p = path.win32.new("\\foo\\bar.txt")
+			assert(p.file_name == "bar.txt")
+		`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("posix strip_prefix", func(t *testing.T) {
+		err := lua.DoString(l, `
+			local path = require("std.path")
+			local p = path.posix.new("/a/b/c/d")
+			local stripped, err = p:strip_prefix("/a/b")
+			assert(tostring(stripped) == "c/d")
+		`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("win32 strip_prefix", func(t *testing.T) {
+		err := lua.DoString(l, `
+			local path = require("std.path")
+			local p = path.win32.new("\\a\\b\\c\\d")
+			local stripped, err = p:strip_prefix("\\a\\b")
+			assert(tostring(stripped) == "c\\d")
+		`)
+		assert.NoError(t, err)
+	})
+}

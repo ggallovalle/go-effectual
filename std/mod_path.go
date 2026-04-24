@@ -47,6 +47,25 @@ func (p *PathBuf) String() string {
 	return p.raw
 }
 
+func (p *PathBuf) dir() string {
+	alt := altSep(p.sep)
+	trimmed := strings.TrimRight(p.raw, p.sep+alt)
+	if trimmed == "" {
+		return p.sep
+	}
+	idx := strings.LastIndex(trimmed, p.sep)
+	if idx == -1 {
+		idx = strings.LastIndex(trimmed, alt)
+	}
+	if idx == 0 {
+		return p.sep
+	}
+	if idx <= 0 {
+		return "."
+	}
+	return trimmed[:idx]
+}
+
 func (p *PathBuf) push(path string) {
 	if p.raw == "" {
 		p.raw = path
@@ -83,28 +102,22 @@ func (p *PathBuf) join(path string) *PathBuf {
 }
 
 func (p *PathBuf) ends_with(child string) bool {
-	if strings.HasPrefix(child, p.sep) || strings.HasPrefix(child, altSep(p.sep)) {
+	alt := altSep(p.sep)
+	if strings.HasPrefix(child, p.sep) || strings.HasPrefix(child, alt) {
 		return p.raw == child
 	}
-	if strings.HasSuffix(p.raw, p.sep+child) || strings.HasSuffix(p.raw, altSep(p.sep)+child) {
+	if strings.HasSuffix(p.raw, p.sep+child) || strings.HasSuffix(p.raw, alt+child) {
 		return true
 	}
-	suffix := child
-	if !strings.HasSuffix(p.raw, suffix) {
-		// Try with sep prefix
-		prefixedSuffix := p.sep + child
-		if strings.HasSuffix(p.raw, prefixedSuffix) {
+	if strings.HasSuffix(p.raw, child) {
+		idx := len(p.raw) - len(child) - 1
+		if idx < 0 {
 			return true
 		}
-		altPrefixedSuffix := altSep(p.sep) + child
-		return strings.HasSuffix(p.raw, altPrefixedSuffix)
+		c := p.raw[idx]
+		return c == p.sep[0] || c == alt[0]
 	}
-	idx := len(p.raw) - len(suffix) - 1
-	if idx < 0 {
-		return true
-	}
-	c := p.raw[idx]
-	return c == p.sep[0] || c == altSep(p.sep)[0]
+	return false
 }
 
 func (p *PathBuf) starts_with(base string) bool {
@@ -161,7 +174,7 @@ func (p *PathBuf) with_extension(ext string) *PathBuf {
 }
 
 func (p *PathBuf) with_file_name(name string) *PathBuf {
-	dir := filepath.Dir(p.raw)
+	dir := p.dir()
 	if dir == "." {
 		return &PathBuf{raw: name, sep: p.sep}
 	}
@@ -199,7 +212,7 @@ func (p *PathBuf) ancestors() []*PathBuf {
 	current := &PathBuf{raw: p.raw, sep: p.sep}
 	for current.raw != "" && current.raw != p.sep && current.raw != altSep(p.sep) {
 		result = append(result, current)
-		parent := &PathBuf{raw: filepath.Dir(current.raw), sep: p.sep}
+		parent := &PathBuf{raw: current.dir(), sep: p.sep}
 		if parent.raw == current.raw {
 			break
 		}
@@ -215,7 +228,7 @@ func (p *PathBuf) parent() *PathBuf {
 	if p.raw == "" || p.raw == p.sep || p.raw == altSep(p.sep) {
 		return nil
 	}
-	dir := filepath.Dir(p.raw)
+	dir := p.dir()
 	if dir == "." {
 		return nil
 	}
@@ -228,15 +241,25 @@ func (p *PathBuf) parent() *PathBuf {
 	return &PathBuf{raw: dir, sep: p.sep}
 }
 
+func (p *PathBuf) baseName() string {
+	trimmed := strings.TrimRight(p.raw, p.sep+altSep(p.sep))
+	if trimmed == "" {
+		return ""
+	}
+	idx := strings.LastIndex(trimmed, p.sep)
+	if idx == -1 {
+		alt := altSep(p.sep)
+		idx = strings.LastIndex(trimmed, alt)
+	}
+	if idx < 0 {
+		return trimmed
+	}
+	return trimmed[idx+1:]
+}
+
 func (p *PathBuf) file_name() string {
-	if p.raw == "" || p.raw == p.sep || p.raw == altSep(p.sep) {
-		return ""
-	}
-	name := filepath.Base(p.raw)
-	if name == "." || name == "/" || name == "\\" {
-		return ""
-	}
-	if strings.HasSuffix(p.raw, p.sep+"..") || strings.HasSuffix(p.raw, altSep(p.sep)+"..") || name == ".." {
+	name := p.baseName()
+	if name == "" || name == ".." {
 		return ""
 	}
 	return name
@@ -678,10 +701,18 @@ func (lib *pathMod) Open(l *lua.State) int {
 
 	l.PushString("posix")
 	lua.NewLibrary(l, pathLibrary(posixSep))
+	posixIdx := l.AbsIndex(-1)
+	l.PushString("MAIN_SEPARATOR")
+	l.PushString(posixSep)
+	l.SetTable(posixIdx)
 	l.SetTable(moduleIdx)
 
 	l.PushString("win32")
 	lua.NewLibrary(l, pathLibrary(winSep))
+	winIdx := l.AbsIndex(-1)
+	l.PushString("MAIN_SEPARATOR")
+	l.PushString(winSep)
+	l.SetTable(winIdx)
 	l.SetTable(moduleIdx)
 
 	lua.NewMetaTable(l, slugPathBufHandle)
