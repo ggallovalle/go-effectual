@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Shopify/go-lua"
+	"github.com/speedata/go-lua"
 )
 
 const BuiltinPlaceholder = "BUILTIN"

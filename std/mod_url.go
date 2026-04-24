@@ -6,7 +6,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/Shopify/go-lua"
+	"github.com/speedata/go-lua"
 	"github.com/ggallovalle/go-effectual"
 	"github.com/ggallovalle/go-effectual/std/serde"
 )

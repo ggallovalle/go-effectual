@@ -1,6 +1,6 @@
 package effectual
 
-import "github.com/Shopify/go-lua"
+import "github.com/speedata/go-lua"
 
 // ConvertLuaToAny converts a Lua value at the given stack index to a Go any value.
 // Handles string, number, boolean, array (table with sequential integer keys),

@@ -1,6 +1,6 @@
 package effectual
 
-import "github.com/Shopify/go-lua"
+import "github.com/speedata/go-lua"
 
 type LuaModDefinition interface {
 	Name() string

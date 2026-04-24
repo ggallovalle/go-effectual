@@ -17,11 +17,11 @@
         "typeCall": true
     },
     "runtime": {
-        "version": "Lua5.2",
+        "version": "Lua5.4",
         "requirePattern": ["lua/?.lua", "lua/?/init.lua"]
     },
     "workspace": {
-        "library": ["{luarocks}", "~/.luarocks/share/lua/5.2"],
+        "library": ["{luarocks}", "~/.luarocks/share/lua/5.4"],
         "workspaceRoots": [".", "./lua"]
     }
 }

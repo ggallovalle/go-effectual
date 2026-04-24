@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"testing"
 
-	lua "github.com/Shopify/go-lua"
+	lua "github.com/speedata/go-lua"
 
 	sut "github.com/ggallovalle/go-effectual/std"
 	"github.com/ggallovalle/go-effectual"

@@ -3,7 +3,7 @@ package serde_test
 import (
 	"testing"
 
-	lua "github.com/Shopify/go-lua"
+	lua "github.com/speedata/go-lua"
 	sut "github.com/ggallovalle/go-effectual/std/serde"
 	"github.com/ggallovalle/go-effectual"
 	"github.com/stretchr/testify/assert"

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Shopify/go-lua"
+	"github.com/speedata/go-lua"
 	"github.com/ggallovalle/go-effectual"
 	"github.com/ggallovalle/go-effectual/std/serde"
 	"github.com/twpayne/go-vfs"

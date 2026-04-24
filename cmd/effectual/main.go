@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Shopify/go-lua"
+	"github.com/speedata/go-lua"
 	"github.com/ggallovalle/go-effectual/fantastic4/vfs4"
 	"github.com/ggallovalle/go-effectual"
 	"github.com/ggallovalle/go-effectual/std"

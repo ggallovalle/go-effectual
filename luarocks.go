@@ -5,7 +5,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/Shopify/go-lua"
+	"github.com/speedata/go-lua"
 )
 
 func TryRequireLuarocks(l *lua.State) error {
