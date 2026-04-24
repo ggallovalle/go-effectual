@@ -9,15 +9,50 @@ import (
 	"github.com/Shopify/go-lua"
 )
 
-type LibGoLogSlug struct {
-	Name string
+type ModSlog struct {
+	Name          string
 }
 
-const LibNameGoLogSlug = "std.log"
+type ModSlogApi struct {
+	mod *ModSlog
+	lua *lua.State
+}
+
+// New is the equivalent to the lua `require(modname).new(logger)`
+//
+// Example (Go):
+//
+//	lib.LuaNew(l, myLogger)
+//	// Lua stack now has a Logger at top, use l.Pop(1) to consume or store it
+func (api *ModSlogApi) New(logger *slog.Logger) {
+	lib := api.mod
+	l := api.lua
+
+	lib.Require(l)
+	l.Field(-1, "new")
+	l.PushUserData(logger)
+	l.Call(1, 1)
+}
+
+func (api *ModSlogApi) SetDefault(logger *slog.Logger) {
+	l := api.lua
+	api.New(logger)
+	l.SetField(-2, "default")
+	l.Pop(1)
+}
+
+const ModSlogName = "std.log"
 const slugLoggerHandle = "go/std/log/slug/Logger*"
 
-func MakeLibGoLogSlug() LibGoLogSlug {
-	return LibGoLogSlug{Name: LibNameGoLogSlug}
+func MakeModSlog() ModSlog {
+	return ModSlog{Name: ModSlogName}
+}
+
+func OpenModSlog(l *lua.State) (ModSlog, ModSlogApi) {
+	mod := MakeModSlog()
+	mod.OpenLib(l)
+	api := mod.Api(l)
+	return mod, api
 }
 
 func toLogger(l *lua.State) *slog.Logger {
@@ -104,9 +139,86 @@ var slogLoggerLibrary = []lua.RegistryFunction{
 		lua.SetMetaTableNamed(l, slugLoggerHandle)
 		return 1
 	}},
+	{Name: "debug", Function: func(l *lua.State) int {
+		l.Field(1, "default")
+		if l.IsNil(-1) {
+			lua.Errorf(l, "std.log: no default logger set")
+			return 0
+		}
+		l.Field(-1, "debug")
+		l.PushValue(-2)
+		l.PushValue(2)
+		l.PushValue(3)
+		l.Call(3, 0)
+		return 0
+	}},
+	{Name: "info", Function: func(l *lua.State) int {
+		l.Field(1, "default")
+		if l.IsNil(-1) {
+			lua.Errorf(l, "std.log: no default logger set")
+			return 0
+		}
+		l.Field(-1, "info")
+		l.PushValue(-2)
+		l.PushValue(2)
+		l.PushValue(3)
+		l.Call(3, 0)
+		return 0
+	}},
+	{Name: "warn", Function: func(l *lua.State) int {
+		l.Field(1, "default")
+		if l.IsNil(-1) {
+			lua.Errorf(l, "std.log: no default logger set")
+			return 0
+		}
+		l.Field(-1, "warn")
+		l.PushValue(-2)
+		l.PushValue(2)
+		l.PushValue(3)
+		l.Call(3, 0)
+		return 0
+	}},
+	{Name: "error", Function: func(l *lua.State) int {
+		l.Field(1, "default")
+		if l.IsNil(-1) {
+			lua.Errorf(l, "std.log: no default logger set")
+			return 0
+		}
+		l.Field(-1, "error")
+		l.PushValue(-2)
+		l.PushValue(2)
+		l.PushValue(3)
+		l.Call(3, 0)
+		return 0
+	}},
+	{Name: "log", Function: func(l *lua.State) int {
+		l.Field(1, "default")
+		if l.IsNil(-1) {
+			lua.Errorf(l, "std.log: no default logger set")
+			return 0
+		}
+		l.Field(-1, "log")
+		l.PushValue(-2)
+		l.PushValue(2)
+		l.PushValue(3)
+		l.PushValue(4)
+		l.Call(4, 0)
+		return 0
+	}},
+	{Name: "level", Function: func(l *lua.State) int {
+		l.Field(1, "default")
+		if l.IsNil(-1) {
+			lua.Errorf(l, "std.log: no default logger set")
+			return 0
+		}
+		l.Field(-1, "level")
+		l.PushValue(-2)
+		l.Call(1, 1)
+		return 1
+	}},
 }
 
-func (lib *LibGoLogSlug) Open(l *lua.State) int {
+func (lib *ModSlog) Open(l *lua.State) int {
 	lua.NewLibrary(l, slogLoggerLibrary)
 	moduleIdx := l.AbsIndex(-1)
 
@@ -132,28 +244,19 @@ func (lib *LibGoLogSlug) Open(l *lua.State) int {
 	return 1
 }
 
-func (lib *LibGoLogSlug) OpenLib(l *lua.State) {
+func (lib *ModSlog) OpenLib(l *lua.State) {
 	lua.Require(l, lib.Name, lib.Open, false)
 	l.Pop(1)
 }
 
-func (lib *LibGoLogSlug) Require(l *lua.State) {
+func (lib *ModSlog) Require(l *lua.State) {
 	l.Global("require")
 	l.PushString(lib.Name)
 	l.Call(1, 1)
 }
 
-// LuaNew is the equivalent to the lua `require(modname).new(logger)`
-//
-// Example (Go):
-//
-//	lib.LuaNew(l, myLogger)
-//	// Lua stack now has a Logger at top, use l.Pop(1) to consume or store it
-func (lib *LibGoLogSlug) LuaNew(l *lua.State, logger *slog.Logger) {
-	lib.Require(l)
-	l.Field(-1, "new")
-	l.PushUserData(logger)
-	l.Call(1, 1) // lib.new(logger)
+func (lib *ModSlog) Api(l *lua.State) ModSlogApi {
+	return ModSlogApi{mod: lib, lua: l}
 }
 
 var slogLoggerAnnotationsTmpl = template.Must(template.New("SlogLoggerAnnotations").Parse(`
@@ -212,12 +315,12 @@ function Logger:level() end
 return log
 `))
 
-func (lib *LibGoLogSlug) Annotations() string {
+func (lib *ModSlog) Annotations() string {
 	data := map[string]string{
-		"module": lib.Name,
-		"Logger": lib.Name + ".Logger",
+		"module":   lib.Name,
+		"Logger":   lib.Name + ".Logger",
 		"LogLevel": lib.Name + ".LogLevel",
-		"Level": lib.Name + ".Level",
+		"Level":    lib.Name + ".Level",
 	}
 	var buf strings.Builder
 	if err := slogLoggerAnnotationsTmpl.Execute(&buf, data); err != nil {
