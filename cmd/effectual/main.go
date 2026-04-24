@@ -8,8 +8,10 @@ import (
 	"strings"
 
 	"github.com/Shopify/go-lua"
+	"github.com/ggallovalle/go-effectual/fantastic4/vfs4"
 	"github.com/ggallovalle/go-effectual/std"
 	"github.com/spf13/cobra"
+	"github.com/twpayne/go-vfs"
 )
 
 type luaMod interface {
@@ -46,7 +48,10 @@ func main() {
 		Run:   runLuaDefs,
 	}
 	luaDefsCmd.Flags().StringSliceP("module", "m", nil, "Module to generate definitions for")
+	luaDefsCmd.Flags().Bool("dry-run", false, "Log file operations instead of performing them")
+	luaDefsCmd.Flags().CountP("verbose", "v", "Increase verbosity (-v=warn, -vv=info, -vvv=debug)")
 
+	rootCmd.PersistentFlags().CountP("verbose", "v", "Increase verbosity (-v=warn, -vv=info, -vvv=debug)")
 	rootCmd.AddCommand(luaCmd, luaDefsCmd)
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -74,6 +79,27 @@ func runLua(cmd *cobra.Command, args []string) {
 func runLuaDefs(cmd *cobra.Command, args []string) {
 	folder := filepath.Join(args[0], "definitions")
 	moduleNames, _ := cmd.Flags().GetStringSlice("module")
+	dryRun, _ := cmd.Flags().GetBool("dry-run")
+	verbose, _ := cmd.Flags().GetCount("verbose")
+
+	level := slog.LevelError
+	switch verbose {
+	case 1:
+		level = slog.LevelWarn
+	case 2:
+		level = slog.LevelInfo
+	case 3:
+		level = slog.LevelDebug
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
+
+	var fs vfs.FS
+	if dryRun {
+		fs = vfs4.NewLogVfs(logger, slog.LevelInfo, nil)
+	} else {
+		fs = vfs4.NewLogVfs(logger, slog.LevelInfo, vfs.OSFS)
+	}
 
 	var mods []luaMod
 	if len(moduleNames) == 0 {
@@ -109,13 +135,13 @@ func runLuaDefs(cmd *cobra.Command, args []string) {
 		parts := strings.Split(mod.Name(), ".")
 		filename := parts[len(parts)-1] + ".lua"
 		dir := filepath.Join(folder, filepath.Join(parts[:len(parts)-1]...))
+		path := filepath.Join(dir, filename)
 
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := vfs.MkdirAll(fs, dir, 0755); err != nil {
 			log.Fatalf("Error creating directory %s: %v", dir, err)
 		}
 
-		path := filepath.Join(dir, filename)
-		if err := os.WriteFile(path, []byte(annotations), 0644); err != nil {
+		if err := fs.WriteFile(path, []byte(annotations), 0644); err != nil {
 			log.Fatalf("Error writing %s: %v", path, err)
 		}
 
