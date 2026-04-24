@@ -53,6 +53,31 @@ func (api *ModPathApi) New(pathStr string) {
 	l.Call(1, 1)
 }
 
+func (api *ModPathApi) ToPathBuf(index int) (*PathBuf, bool) {
+	l := api.lua
+
+	v := lua.CheckUserData(l, index, slugPathBufHandle)
+	if v != nil {
+		if pb, ok := v.(*PathBuf); ok {
+			return pb, true
+		}
+	}
+
+	if s, ok := l.ToString(index); ok {
+		return pathBufFromStringSep(s, api.mod.sep), true
+	}
+
+	return nil, false
+}
+
+func (api *ModPathApi) CheckPathBuf(index int) *PathBuf {
+	if pb, ok := api.ToPathBuf(index); ok {
+		return pb
+	}
+	lua.ArgumentError(api.lua, index, "expected std.path.PathBuf or string")
+	panic("unreachable")
+}
+
 type PathBuf struct {
 	raw string
 	sep string
@@ -370,37 +395,37 @@ func pathBufFromStringSep(s, sep string) *PathBuf {
 	return &PathBuf{raw: sep + trimmed, sep: sep}
 }
 
-var pathBufMethods = []lua.RegistryFunction{
-	{Name: "push", Function: func(l *lua.State) int {
+var pathBufMethods = map[string]lua.Function{
+	"push": func(l *lua.State) int {
 		pb := toPathBuf(l, 1)
 		arg := toPathBufString(l, 2)
 		pb.push(arg)
 		return 0
-	}},
-	{Name: "pop", Function: func(l *lua.State) int {
+	},
+	"pop": func(l *lua.State) int {
 		pb := toPathBuf(l, 1)
 		l.PushBoolean(pb.pop())
 		return 1
-	}},
-	{Name: "join", Function: func(l *lua.State) int {
+	},
+	"join": func(l *lua.State) int {
 		pb := toPathBuf(l, 1)
 		arg := toPathBufString(l, 2)
 		pathBufToLua(l, pb.join(arg))
 		return 1
-	}},
-	{Name: "ends_with", Function: func(l *lua.State) int {
+	},
+	"ends_with": func(l *lua.State) int {
 		pb := toPathBuf(l, 1)
 		child := toPathBufString(l, 2)
 		l.PushBoolean(pb.ends_with(child))
 		return 1
-	}},
-	{Name: "starts_with", Function: func(l *lua.State) int {
+	},
+	"starts_with": func(l *lua.State) int {
 		pb := toPathBuf(l, 1)
 		base := toPathBufString(l, 2)
 		l.PushBoolean(pb.starts_with(base))
 		return 1
-	}},
-	{Name: "strip_prefix", Function: func(l *lua.State) int {
+	},
+	"strip_prefix": func(l *lua.State) int {
 		pb := toPathBuf(l, 1)
 		prefix := toPathBufString(l, 2)
 		result, err := pb.strip_prefix(prefix)
@@ -411,19 +436,19 @@ var pathBufMethods = []lua.RegistryFunction{
 		}
 		pathBufToLua(l, result)
 		return 1
-	}},
-	{Name: "with_extension", Function: func(l *lua.State) int {
+	},
+	"with_extension": func(l *lua.State) int {
 		pb := toPathBuf(l, 1)
 		ext, _ := l.ToString(2)
 		pathBufToLua(l, pb.with_extension(ext))
 		return 1
-	}},
-	{Name: "with_file_name", Function: func(l *lua.State) int {
+	},
+	"with_file_name": func(l *lua.State) int {
 		pb := toPathBuf(l, 1)
 		name, _ := l.ToString(2)
 		pathBufToLua(l, pb.with_file_name(name))
 		return 1
-	}},
+	},
 }
 
 var pathBufGetters = map[string]func(*lua.State){
@@ -520,22 +545,7 @@ var pathBufMetatable = []lua.RegistryFunction{
 		l.PushString(left + right)
 		return 1
 	}},
-	{Name: "__index", Function: func(l *lua.State) int {
-		key := lua.CheckString(l, 2)
-		if l.MetaTable(1) {
-			l.Field(-1, key)
-			if !l.IsNil(-1) {
-				return 1
-			}
-			l.Pop(1)
-		}
-		if getter, ok := pathBufGetters[key]; ok {
-			getter(l)
-			return 1
-		}
-		l.PushNil()
-		return 1
-	}},
+	{Name: "__index", Function: effectual.LuaMetaIndex(pathBufGetters, pathBufMethods)},
 }
 
 func pathNew(sep string, l *lua.State) int {
@@ -734,7 +744,10 @@ func (lib *pathMod) Open(l *lua.State) int {
 	l.PushValue(-1)
 	l.SetField(-2, "__index")
 	lua.SetFunctions(l, pathBufMetatable, 0)
-	lua.SetFunctions(l, pathBufMethods, 0)
+	for name, fn := range pathBufMethods {
+		l.PushGoFunction(fn)
+		l.SetField(-2, name)
+	}
 	l.Pop(1)
 
 	return 1
