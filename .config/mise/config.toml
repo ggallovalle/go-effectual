@@ -27,7 +27,7 @@ run = "go test -coverprofile=coverage.out ./... && go tool cover -html=coverage.
 [tasks.lint-commit]
 description = "Lint a commit message file"
 usage = 'arg "<file>" help="Path to commit message file"'
-run = "go tool commitlint lint --edit ${usage_file?}"
+run = "go tool commitlint lint --message ${usage_file}"
 
 [tasks.setup-lefthook]
 description = "Install lefthook git hooks"
