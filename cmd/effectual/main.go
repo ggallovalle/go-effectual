@@ -5,28 +5,14 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/Shopify/go-lua"
 	"github.com/ggallovalle/go-effectual/fantastic4/vfs4"
+	"github.com/ggallovalle/go-effectual"
 	"github.com/ggallovalle/go-effectual/std"
 	"github.com/spf13/cobra"
 	"github.com/twpayne/go-vfs"
 )
-
-type luaMod interface {
-	Name() string
-	Annotations() string
-}
-
-type moduleEntry struct {
-	name string
-	make func() luaMod
-}
-
-var availableModules = []moduleEntry{
-	{std.ModSlogName, func() luaMod { return std.MakeModSlog() }},
-}
 
 func main() {
 	rootCmd := &cobra.Command{
@@ -61,15 +47,20 @@ func main() {
 func runLua(cmd *cobra.Command, args []string) {
 	file := args[0]
 
-	l := lua.NewState()
+	l := lua.NewStateEx()
 	lua.OpenLibraries(l)
 
-	stdmod := std.MakeModSlog()
-	stdmod.OpenLib(l)
+	stdPkg := std.NewStdPackage()
+	if err := stdPkg.OpenLib(l, slog.Default()); err != nil {
+		log.Fatal(err)
+	}
 
-	defaultLogger := slog.Default()
-	api := stdmod.Api(l)
-	api.SetDefault(defaultLogger)
+	effectual.PackagePathPrepend(l, "./lua/?.lua")
+	effectual.PackagePathPrepend(l, "./lua/?/init.lua")
+
+	if err := effectual.TryRequireLuarocks(l); err != nil {
+		slog.Default().Debug("luarocks not available", "err", err)
+	}
 
 	if err := lua.DoFile(l, file); err != nil {
 		log.Fatalf("Error running %s: %v", file, err)
@@ -78,7 +69,6 @@ func runLua(cmd *cobra.Command, args []string) {
 
 func runLuaDefs(cmd *cobra.Command, args []string) {
 	folder := filepath.Join(args[0], "definitions")
-	moduleNames, _ := cmd.Flags().GetStringSlice("module")
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	verbose, _ := cmd.Flags().GetCount("verbose")
 
@@ -101,50 +91,8 @@ func runLuaDefs(cmd *cobra.Command, args []string) {
 		fs = vfs4.NewLogVfs(logger, slog.LevelInfo, vfs.OSFS)
 	}
 
-	var mods []luaMod
-	if len(moduleNames) == 0 {
-		for _, entry := range availableModules {
-			mods = append(mods, entry.make())
-		}
-	} else {
-		for _, name := range moduleNames {
-			var found bool
-			for _, entry := range availableModules {
-				if entry.name == name {
-					mods = append(mods, entry.make())
-					found = true
-					break
-				}
-			}
-			if !found {
-				available := make([]string, 0, len(availableModules))
-				for _, e := range availableModules {
-					available = append(available, e.name)
-				}
-				log.Fatalf("Error: unknown module %q. Available modules: %v", name, available)
-			}
-		}
-	}
-
-	for _, mod := range mods {
-		annotations := mod.Annotations()
-		if annotations == "" {
-			continue
-		}
-
-		parts := strings.Split(mod.Name(), ".")
-		filename := parts[len(parts)-1] + ".lua"
-		dir := filepath.Join(folder, filepath.Join(parts[:len(parts)-1]...))
-		path := filepath.Join(dir, filename)
-
-		if err := vfs.MkdirAll(fs, dir, 0755); err != nil {
-			log.Fatalf("Error creating directory %s: %v", dir, err)
-		}
-
-		if err := fs.WriteFile(path, []byte(annotations), 0644); err != nil {
-			log.Fatalf("Error writing %s: %v", path, err)
-		}
-
-		log.Printf("Generated %s", path)
+	pkg := std.NewStdPackage()
+	if err := pkg.GenerateAnnotations(fs, folder); err != nil {
+		log.Fatalf("Error generating annotations: %v", err)
 	}
 }

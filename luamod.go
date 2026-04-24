@@ -2,14 +2,18 @@ package effectual
 
 import "github.com/Shopify/go-lua"
 
-// LuaMod is the interface implemented by types that
-// can exposed a lua module.
-type LuaMod[T any] interface {
+type LuaModDefinition interface {
 	Name() string
 	Annotations() string
 	Open(l *lua.State) int
 	OpenLib(l *lua.State)
 	Require(l *lua.State)
+}
+
+// LuaMod is the interface implemented by types that
+// can exposed a lua module.
+type LuaMod[T any] interface {
+	LuaModDefinition
 	Api(l *lua.State) T
 }
 
