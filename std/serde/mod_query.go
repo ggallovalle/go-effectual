@@ -287,7 +287,7 @@ var queryMetatable = []lua.RegistryFunction{
 		l.PushInteger(0)
 		return 3
 	}},
-	{Name: "__index", Function: effectual.LuaMetaIndex(queryGetters, queryMethods)},
+	effectual.LuaMetaIndex(queryGetters, queryMethods),
 }
 
 func queryNew(l *lua.State) int {

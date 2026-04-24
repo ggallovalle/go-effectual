@@ -18,8 +18,8 @@ func LuaModOpen[T any](l *lua.State, mod LuaMod[T]) T {
 	return mod.Api(l)
 }
 
-func LuaMetaIndex(getters map[string]func(*lua.State), methods map[string]lua.Function) lua.Function {
-	return func(l *lua.State) int {
+func LuaMetaIndex(getters map[string]func(*lua.State), methods map[string]lua.Function) lua.RegistryFunction {
+	return lua.RegistryFunction{Name: "__index", Function: func(l *lua.State) int {
 		key := lua.CheckString(l, 2)
 		if l.MetaTable(1) {
 			l.Field(-1, key)
@@ -38,5 +38,5 @@ func LuaMetaIndex(getters map[string]func(*lua.State), methods map[string]lua.Fu
 		}
 		l.PushNil()
 		return 1
-	}
+	}}
 }

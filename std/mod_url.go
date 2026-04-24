@@ -283,7 +283,7 @@ var urlMetatable = []lua.RegistryFunction{
 		urlToLua(l, newUrl)
 		return 1
 	}},
-	{Name: "__index", Function: effectual.LuaMetaIndex(urlGetters, urlMethods)},
+	effectual.LuaMetaIndex(urlGetters, urlMethods),
 }
 
 func urlLibrary() []lua.RegistryFunction {

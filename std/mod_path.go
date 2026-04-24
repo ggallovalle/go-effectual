@@ -545,7 +545,7 @@ var pathBufMetatable = []lua.RegistryFunction{
 		l.PushString(left + right)
 		return 1
 	}},
-	{Name: "__index", Function: effectual.LuaMetaIndex(pathBufGetters, pathBufMethods)},
+	effectual.LuaMetaIndex(pathBufGetters, pathBufMethods),
 }
 
 func pathNew(sep string, l *lua.State) int {
