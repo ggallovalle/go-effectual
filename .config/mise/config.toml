@@ -29,6 +29,10 @@ description = "Lint a commit message file"
 usage = 'arg "<file>" help="Path to commit message file"'
 run = "go tool commitlint lint --message ${usage_file}"
 
+[tasks.effectual]
+description = "Run effectual"
+run = "go run ./cmd/effectual"
+
 [tasks.setup-lefthook]
 description = "Install lefthook git hooks"
 run = "go tool lefthook install"
