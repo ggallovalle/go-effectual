@@ -9,6 +9,7 @@ import (
 	lua "github.com/Shopify/go-lua"
 
 	sut "github.com/ggallovalle/go-effectual/std"
+	"github.com/ggallovalle/go-effectual"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -30,7 +31,7 @@ func (h *allLevelHandler) WithGroup(string) slog.Handler      { return h }
 func Test_LibGoLogSlug_Levels(t *testing.T) {
 	l := lua.NewState()
 	lua.OpenLibraries(l)
-	_, api := sut.OpenModSlog(l)
+	api := effectual.LuaModOpen(l, sut.MakeModSlog())
 
 	for _, tc := range []struct {
 		name  string
@@ -58,7 +59,7 @@ func Test_LibGoLogSlug_Levels(t *testing.T) {
 func Test_LibGoLogSlug_Default(t *testing.T) {
 	l := lua.NewState()
 	lua.OpenLibraries(l)
-	_, api := sut.OpenModSlog(l)
+	api := effectual.LuaModOpen(l, sut.MakeModSlog())
 
 	var buf bytes.Buffer
 	logger := slog.New(&allLevelHandler{sink: &buf, level: slog.LevelDebug})
@@ -141,7 +142,7 @@ func Test_LibGoLogSlug_Default_Errors(t *testing.T) {
 	l := lua.NewState()
 	lua.OpenLibraries(l)
 
-	sut.OpenModSlog(l)
+	effectual.LuaModOpen(l, sut.MakeModSlog())
 
 	err := lua.DoString(l, `
 		local std = require("std.log")

@@ -7,10 +7,11 @@ import (
 	"text/template"
 
 	"github.com/Shopify/go-lua"
+	"github.com/ggallovalle/go-effectual"
 )
 
 type ModSlog struct {
-	Name          string
+	name string
 }
 
 type ModSlogApi struct {
@@ -44,15 +45,8 @@ func (api *ModSlogApi) SetDefault(logger *slog.Logger) {
 const ModSlogName = "std.log"
 const slugLoggerHandle = "go/std/log/slug/Logger*"
 
-func MakeModSlog() ModSlog {
-	return ModSlog{Name: ModSlogName}
-}
-
-func OpenModSlog(l *lua.State) (ModSlog, ModSlogApi) {
-	mod := MakeModSlog()
-	mod.OpenLib(l)
-	api := mod.Api(l)
-	return mod, api
+func MakeModSlog() effectual.LuaMod[ModSlogApi] {
+	return &ModSlog{name: ModSlogName}
 }
 
 func toLogger(l *lua.State) *slog.Logger {
@@ -218,6 +212,8 @@ var slogLoggerLibrary = []lua.RegistryFunction{
 	}},
 }
 
+// Open registers the module's Lua functions with the Lua state.
+// Open implements [LuaMod].
 func (lib *ModSlog) Open(l *lua.State) int {
 	lua.NewLibrary(l, slogLoggerLibrary)
 	moduleIdx := l.AbsIndex(-1)
@@ -244,19 +240,31 @@ func (lib *ModSlog) Open(l *lua.State) int {
 	return 1
 }
 
+// OpenLib loads the module as a Lua library using lua.Require.
+// OpenLib implements [LuaMod].
 func (lib *ModSlog) OpenLib(l *lua.State) {
-	lua.Require(l, lib.Name, lib.Open, false)
+	lua.Require(l, lib.name, lib.Open, false)
 	l.Pop(1)
 }
 
+// Require executes the Lua global `require` for this module.
+// Require implements [LuaMod].
 func (lib *ModSlog) Require(l *lua.State) {
 	l.Global("require")
-	l.PushString(lib.Name)
+	l.PushString(lib.Name())
 	l.Call(1, 1)
 }
 
+// Api returns a wrapper that allows to use the lua functionality from Go in something more friendly
+// Api implements [LuaMod].
 func (lib *ModSlog) Api(l *lua.State) ModSlogApi {
 	return ModSlogApi{mod: lib, lua: l}
+}
+
+// Name returns the module name.
+// Name implements [LuaMod].
+func (lib *ModSlog) Name() string {
+	return lib.name
 }
 
 var slogLoggerAnnotationsTmpl = template.Must(template.New("SlogLoggerAnnotations").Parse(`
@@ -315,12 +323,14 @@ function Logger:level() end
 return log
 `))
 
+// Annotations returns emmylua annotations for lsp support.
+// Annotations implements [LuaMod].
 func (lib *ModSlog) Annotations() string {
 	data := map[string]string{
-		"module":   lib.Name,
-		"Logger":   lib.Name + ".Logger",
-		"LogLevel": lib.Name + ".LogLevel",
-		"Level":    lib.Name + ".Level",
+		"module":   lib.Name(),
+		"Logger":   lib.Name() + ".Logger",
+		"LogLevel": lib.Name() + ".LogLevel",
+		"Level":    lib.Name() + ".Level",
 	}
 	var buf strings.Builder
 	if err := slogLoggerAnnotationsTmpl.Execute(&buf, data); err != nil {
