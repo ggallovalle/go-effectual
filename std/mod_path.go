@@ -38,6 +38,21 @@ type pathMod struct {
 	altSep string
 }
 
+type ModPathApi struct {
+	mod *pathMod
+	lua *lua.State
+}
+
+func (api *ModPathApi) New(pathStr string) {
+	lib := api.mod
+	l := api.lua
+
+	lib.Require(l)
+	l.Field(-1, "new")
+	l.PushString(pathStr)
+	l.Call(1, 1)
+}
+
 type PathBuf struct {
 	raw string
 	sep string
@@ -736,11 +751,11 @@ func (lib *pathMod) Require(l *lua.State) {
 	l.Call(1, 1)
 }
 
-func (lib *pathMod) Api(l *lua.State) struct{} {
-	return struct{}{}
+func (lib *pathMod) Api(l *lua.State) ModPathApi {
+	return ModPathApi{mod: lib, lua: l}
 }
 
-func MakeModPath() effectual.LuaMod[struct{}] {
+func MakeModPath() effectual.LuaMod[ModPathApi] {
 	sep := nativeSep()
 	return &pathMod{name: "std.path", sep: sep, altSep: altSep(sep)}
 }
