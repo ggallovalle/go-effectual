@@ -4,21 +4,42 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/Shopify/go-lua"
 	"github.com/ggallovalle/go-effectual"
 )
 
-type ModPath struct {
-	name string
+const (
+	posixSep          = "/"
+	winSep            = "\\"
+	slugPathBufHandle = "go/std/path/PathBuf*"
+)
+
+func nativeSep() string {
+	if runtime.GOOS == "windows" {
+		return winSep
+	}
+	return posixSep
 }
 
-const ModPathName = "std.path"
-const slugPathBufHandle = "go/std/path/PathBuf*"
+func altSep(sep string) string {
+	if sep == posixSep {
+		return winSep
+	}
+	return posixSep
+}
+
+type pathMod struct {
+	name   string
+	sep    string
+	altSep string
+}
 
 type PathBuf struct {
 	raw string
+	sep string
 }
 
 func (p *PathBuf) String() string {
@@ -30,19 +51,19 @@ func (p *PathBuf) push(path string) {
 		p.raw = path
 		return
 	}
-	if strings.HasSuffix(p.raw, "/") {
+	if strings.HasSuffix(p.raw, p.sep) {
 		p.raw += path
 	} else {
-		p.raw += "/" + path
+		p.raw += p.sep + path
 	}
 }
 
 func (p *PathBuf) pop() bool {
-	if p.raw == "" || p.raw == "/" {
+	if p.raw == "" || p.raw == p.sep {
 		p.raw = ""
 		return false
 	}
-	idx := strings.LastIndex(p.raw, "/")
+	idx := strings.LastIndex(p.raw, p.sep)
 	if idx <= 0 {
 		p.raw = ""
 		return false
@@ -52,45 +73,52 @@ func (p *PathBuf) pop() bool {
 }
 
 func (p *PathBuf) join(path string) *PathBuf {
-	if strings.HasPrefix(path, "/") {
-		return &PathBuf{raw: path}
+	if strings.HasPrefix(path, p.sep) || strings.HasPrefix(path, altSep(p.sep)) {
+		return &PathBuf{raw: path, sep: p.sep}
 	}
-	newBuf := &PathBuf{raw: p.raw}
+	newBuf := &PathBuf{raw: p.raw, sep: p.sep}
 	newBuf.push(path)
 	return newBuf
 }
 
 func (p *PathBuf) ends_with(child string) bool {
-	if strings.HasPrefix(child, "/") {
+	if strings.HasPrefix(child, p.sep) || strings.HasPrefix(child, altSep(p.sep)) {
 		return p.raw == child
 	}
-	if strings.HasSuffix(p.raw, "/"+child) {
+	if strings.HasSuffix(p.raw, p.sep+child) || strings.HasSuffix(p.raw, altSep(p.sep)+child) {
 		return true
 	}
-	if strings.HasSuffix(p.raw, child) {
-		idx := len(p.raw) - len(child) - 1
-		if idx < 0 {
+	suffix := child
+	if !strings.HasSuffix(p.raw, suffix) {
+		// Try with sep prefix
+		prefixedSuffix := p.sep + child
+		if strings.HasSuffix(p.raw, prefixedSuffix) {
 			return true
 		}
-		if p.raw[idx] == '/' {
-			return true
-		}
+		altPrefixedSuffix := altSep(p.sep) + child
+		return strings.HasSuffix(p.raw, altPrefixedSuffix)
 	}
-	return false
+	idx := len(p.raw) - len(suffix) - 1
+	if idx < 0 {
+		return true
+	}
+	c := p.raw[idx]
+	return c == p.sep[0] || c == altSep(p.sep)[0]
 }
 
 func (p *PathBuf) starts_with(base string) bool {
-	// First check exact match or match with trailing slashes in base
 	if strings.HasPrefix(p.raw, base) {
 		if len(p.raw) == len(base) {
 			return true
 		}
-		if len(p.raw) > len(base) && p.raw[len(base)] == '/' {
-			return true
+		if len(p.raw) > len(base) {
+			c := p.raw[len(base)]
+			if c == p.sep[0] || c == altSep(p.sep)[0] {
+				return true
+			}
 		}
 	}
-	// Normalize base by removing trailing slashes and check again
-	normalizedBase := strings.TrimRight(base, "/")
+	normalizedBase := strings.TrimRight(base, "/\\")
 	if normalizedBase == "" {
 		return false
 	}
@@ -98,8 +126,11 @@ func (p *PathBuf) starts_with(base string) bool {
 		if len(p.raw) == len(normalizedBase) {
 			return true
 		}
-		if len(p.raw) > len(normalizedBase) && p.raw[len(normalizedBase)] == '/' {
-			return true
+		if len(p.raw) > len(normalizedBase) {
+			c := p.raw[len(normalizedBase)]
+			if c == p.sep[0] || c == altSep(p.sep)[0] {
+				return true
+			}
 		}
 	}
 	return false
@@ -111,31 +142,32 @@ func (p *PathBuf) strip_prefix(prefix string) (*PathBuf, error) {
 	}
 	result := strings.TrimPrefix(p.raw, prefix)
 	result = strings.TrimPrefix(result, "/")
+	result = strings.TrimPrefix(result, "\\")
 	if result == "" {
-		result = "/"
+		result = p.sep
 	}
-	return &PathBuf{raw: result}, nil
+	return &PathBuf{raw: result, sep: p.sep}, nil
 }
 
 func (p *PathBuf) with_extension(ext string) *PathBuf {
-	dotIdx := strings.LastIndex(filepath.Base(p.raw), ".")
+	base := filepath.Base(p.raw)
+	dotIdx := strings.LastIndex(base, ".")
 	if dotIdx <= 0 {
-		p.raw += "." + ext
-		return p
+		return &PathBuf{raw: p.raw + "." + ext, sep: p.sep}
 	}
-	stem := p.raw[:len(p.raw)-len(filepath.Base(p.raw))+dotIdx]
-	return &PathBuf{raw: stem + "." + ext}
+	stem := p.raw[:len(p.raw)-len(base)+dotIdx]
+	return &PathBuf{raw: stem + "." + ext, sep: p.sep}
 }
 
 func (p *PathBuf) with_file_name(name string) *PathBuf {
 	dir := filepath.Dir(p.raw)
 	if dir == "." {
-		return &PathBuf{raw: name}
+		return &PathBuf{raw: name, sep: p.sep}
 	}
-	if !strings.HasSuffix(dir, "/") && dir != "/" {
-		dir += "/"
+	if dir != p.sep && !strings.HasSuffix(dir, p.sep) && !strings.HasSuffix(dir, altSep(p.sep)) {
+		dir += p.sep
 	}
-	return &PathBuf{raw: dir + name}
+	return &PathBuf{raw: dir + name, sep: p.sep}
 }
 
 func (p *PathBuf) components() []string {
@@ -143,40 +175,43 @@ func (p *PathBuf) components() []string {
 		return nil
 	}
 	var parts []string
-	trimmed := strings.Trim(p.raw, "/")
+	trimmed := strings.Trim(p.raw, "/\\")
 	if trimmed == "" {
-		return []string{"/"}
+		return []string{p.sep}
 	}
-	for _, part := range strings.Split(trimmed, "/") {
+	for _, part := range strings.Split(trimmed, p.sep) {
 		if part != "" {
 			parts = append(parts, part)
 		}
 	}
-	if strings.HasPrefix(p.raw, "/") {
-		return append([]string{"/"}, parts...)
+	if strings.HasPrefix(p.raw, p.sep) {
+		return append([]string{p.sep}, parts...)
+	}
+	if strings.HasPrefix(p.raw, altSep(p.sep)) {
+		return append([]string{altSep(p.sep)}, parts...)
 	}
 	return parts
 }
 
 func (p *PathBuf) ancestors() []*PathBuf {
 	var result []*PathBuf
-	current := &PathBuf{raw: p.raw}
-	for current.raw != "" && current.raw != "/" {
+	current := &PathBuf{raw: p.raw, sep: p.sep}
+	for current.raw != "" && current.raw != p.sep && current.raw != altSep(p.sep) {
 		result = append(result, current)
-		parent := &PathBuf{raw: filepath.Dir(current.raw)}
+		parent := &PathBuf{raw: filepath.Dir(current.raw), sep: p.sep}
 		if parent.raw == current.raw {
 			break
 		}
 		current = parent
 	}
-	if current.raw == "/" {
+	if current.raw == p.sep || current.raw == altSep(p.sep) {
 		result = append(result, current)
 	}
 	return result
 }
 
 func (p *PathBuf) parent() *PathBuf {
-	if p.raw == "" || p.raw == "/" {
+	if p.raw == "" || p.raw == p.sep || p.raw == altSep(p.sep) {
 		return nil
 	}
 	dir := filepath.Dir(p.raw)
@@ -186,21 +221,21 @@ func (p *PathBuf) parent() *PathBuf {
 	if dir == p.raw {
 		return nil
 	}
-	if dir == "/" {
-		return &PathBuf{raw: "/"}
+	if dir == p.sep || dir == altSep(p.sep) {
+		return &PathBuf{raw: p.sep, sep: p.sep}
 	}
-	return &PathBuf{raw: dir}
+	return &PathBuf{raw: dir, sep: p.sep}
 }
 
 func (p *PathBuf) file_name() string {
-	if p.raw == "" || p.raw == "/" {
+	if p.raw == "" || p.raw == p.sep || p.raw == altSep(p.sep) {
 		return ""
 	}
 	name := filepath.Base(p.raw)
-	if name == "." || name == "/" {
+	if name == "." || name == "/" || name == "\\" {
 		return ""
 	}
-	if strings.HasSuffix(p.raw, "/..") || name == ".." {
+	if strings.HasSuffix(p.raw, p.sep+"..") || strings.HasSuffix(p.raw, altSep(p.sep)+"..") || name == ".." {
 		return ""
 	}
 	return name
@@ -208,7 +243,7 @@ func (p *PathBuf) file_name() string {
 
 func (p *PathBuf) extension() string {
 	name := p.file_name()
-	if name == "" || name == "/" {
+	if name == "" {
 		return ""
 	}
 	dotIdx := strings.LastIndex(name, ".")
@@ -216,7 +251,7 @@ func (p *PathBuf) extension() string {
 		return ""
 	}
 	ext := name[dotIdx+1:]
-	if ext == "" || strings.Contains(ext, "/") {
+	if ext == "" || strings.Contains(ext, "/") || strings.Contains(ext, "\\") {
 		return ""
 	}
 	return ext
@@ -224,7 +259,7 @@ func (p *PathBuf) extension() string {
 
 func (p *PathBuf) file_stem() string {
 	name := p.file_name()
-	if name == "" || name == "/" {
+	if name == "" {
 		return ""
 	}
 	dotIdx := strings.LastIndex(name, ".")
@@ -235,7 +270,7 @@ func (p *PathBuf) file_stem() string {
 }
 
 func (p *PathBuf) has_root() bool {
-	return strings.HasPrefix(p.raw, "/")
+	return strings.HasPrefix(p.raw, p.sep) || strings.HasPrefix(p.raw, altSep(p.sep))
 }
 
 func (p *PathBuf) is_absolute() bool {
@@ -281,18 +316,19 @@ func toPathBuf(l *lua.State, idx int) *PathBuf {
 	return lua.CheckUserData(l, idx, slugPathBufHandle).(*PathBuf)
 }
 
-func pathBufFromString(s string) *PathBuf {
-	trimmed := strings.Trim(s, "/")
-	if trimmed == "" && strings.Contains(s, "/") {
-		return &PathBuf{raw: "/"}
+func pathBufFromStringSep(s, sep string) *PathBuf {
+	alt := altSep(sep)
+	trimmed := strings.Trim(s, "/\\")
+	if trimmed == "" && strings.ContainsAny(s, "/\\") {
+		return &PathBuf{raw: sep, sep: sep}
 	}
 	if s == "" {
-		return &PathBuf{raw: ""}
+		return &PathBuf{raw: "", sep: sep}
 	}
-	if !strings.HasPrefix(s, "/") {
-		return &PathBuf{raw: s}
+	if !strings.HasPrefix(s, sep) && !strings.HasPrefix(s, alt) {
+		return &PathBuf{raw: s, sep: sep}
 	}
-	return &PathBuf{raw: "/" + trimmed}
+	return &PathBuf{raw: sep + trimmed, sep: sep}
 }
 
 var pathBufMethods = []lua.RegistryFunction{
@@ -433,7 +469,7 @@ var pathBufMetatable = []lua.RegistryFunction{
 		if ud, ok := l.ToUserData(1).(*PathBuf); ok {
 			pb = ud
 		} else {
-			pb = pathBufFromString(toPathBufString(l, 1))
+			pb = pathBufFromStringSep(toPathBufString(l, 1), posixSep)
 		}
 		arg := toPathBufString(l, 2)
 		pathBufToLua(l, pb.join(arg))
@@ -463,66 +499,73 @@ var pathBufMetatable = []lua.RegistryFunction{
 	}},
 }
 
-var pathLibrary = []lua.RegistryFunction{
-	{Name: "new", Function: func(l *lua.State) int {
-		s := toPathBufString(l, 1)
-		pathBufToLua(l, pathBufFromString(s))
-		return 1
-	}},
-	{Name: "join", Function: func(l *lua.State) int {
-		var parts []string
-		n := l.Top()
-		for i := 1; i <= n; i++ {
-			parts = append(parts, toPathBufString(l, i))
-		}
-		if len(parts) == 0 {
-			pathBufToLua(l, &PathBuf{raw: ""})
-		} else {
-			result := parts[0]
-			for i := 1; i < len(parts); i++ {
-				if strings.HasPrefix(parts[i], "/") {
-					result = parts[i]
-				} else if strings.HasSuffix(result, "/") {
-					result += parts[i]
-				} else {
-					result += "/" + parts[i]
-				}
+func pathNew(sep string, l *lua.State) int {
+	s := toPathBufString(l, 1)
+	pathBufToLua(l, pathBufFromStringSep(s, sep))
+	return 1
+}
+
+func pathJoin(sep string, l *lua.State) int {
+	alt := altSep(sep)
+	var parts []string
+	n := l.Top()
+	for i := 1; i <= n; i++ {
+		parts = append(parts, toPathBufString(l, i))
+	}
+	if len(parts) == 0 {
+		pathBufToLua(l, &PathBuf{raw: "", sep: sep})
+	} else {
+		result := parts[0]
+		for i := 1; i < len(parts); i++ {
+			if strings.HasPrefix(parts[i], sep) || strings.HasPrefix(parts[i], alt) {
+				result = parts[i]
+			} else if strings.HasSuffix(result, sep) || strings.HasSuffix(result, alt) {
+				result += parts[i]
+			} else {
+				result += sep + parts[i]
 			}
-			pathBufToLua(l, pathBufFromString(result))
 		}
-		return 1
-	}},
-	{Name: "absolute", Function: func(l *lua.State) int {
-		s := toPathBufString(l, 1)
-		if s == "" {
-			l.PushNil()
-			l.PushString("path is empty")
-			return 2
-		}
-		cwd, err := os.Getwd()
-		if err != nil {
-			l.PushNil()
-			l.PushString("failed to get current directory")
-			return 2
-		}
-		if strings.HasPrefix(s, "/") {
-			pathBufToLua(l, pathBufFromString(s))
-		} else {
-			pathBufToLua(l, pathBufFromString(cwd+"/"+s))
-		}
-		return 1
-	}},
+		pathBufToLua(l, pathBufFromStringSep(result, sep))
+	}
+	return 1
 }
 
-func MakeModPath() effectual.LuaMod[struct{}] {
-	return &ModPath{name: ModPathName}
+func pathAbsolute(sep string, l *lua.State) int {
+	s := toPathBufString(l, 1)
+	if s == "" {
+		l.PushNil()
+		l.PushString("path is empty")
+		return 2
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		l.PushNil()
+		l.PushString("failed to get current directory")
+		return 2
+	}
+	if strings.HasPrefix(s, sep) || strings.HasPrefix(s, altSep(sep)) {
+		pathBufToLua(l, pathBufFromStringSep(s, sep))
+	} else {
+		pathBufToLua(l, pathBufFromStringSep(cwd+sep+s, sep))
+	}
+	return 1
 }
 
-func (lib *ModPath) Name() string {
-	return lib.name
+func pathLibrary(sep string) []lua.RegistryFunction {
+	return []lua.RegistryFunction{
+		{Name: "new", Function: func(l *lua.State) int {
+			return pathNew(sep, l)
+		}},
+		{Name: "join", Function: func(l *lua.State) int {
+			return pathJoin(sep, l)
+		}},
+		{Name: "absolute", Function: func(l *lua.State) int {
+			return pathAbsolute(sep, l)
+		}},
+	}
 }
 
-func (lib *ModPath) Annotations() string {
+func pathModAnnotations(sep string) string {
 	return `---@meta std.path
 
 ---@class (exact) std.path.PathBuf : userdata
@@ -540,7 +583,7 @@ func (lib *ModPath) Annotations() string {
 local path = {}
 
 ---@type string
-path.MAIN_SEPARATOR = "/"
+path.MAIN_SEPARATOR = "` + sep + `"
 
 ---@param value string
 ---@return std.path.PathBuf
@@ -559,12 +602,28 @@ return path
 `
 }
 
-func (lib *ModPath) Open(l *lua.State) int {
-	lua.NewLibrary(l, pathLibrary)
+func (lib *pathMod) Name() string {
+	return lib.name
+}
+
+func (lib *pathMod) Annotations() string {
+	return pathModAnnotations(lib.sep)
+}
+
+func (lib *pathMod) Open(l *lua.State) int {
+	lua.NewLibrary(l, pathLibrary(lib.sep))
 	moduleIdx := l.AbsIndex(-1)
 
 	l.PushString("MAIN_SEPARATOR")
-	l.PushString("/")
+	l.PushString(lib.sep)
+	l.SetTable(moduleIdx)
+
+	l.PushString("posix")
+	lua.NewLibrary(l, pathLibrary(posixSep))
+	l.SetTable(moduleIdx)
+
+	l.PushString("win32")
+	lua.NewLibrary(l, pathLibrary(winSep))
 	l.SetTable(moduleIdx)
 
 	lua.NewMetaTable(l, slugPathBufHandle)
@@ -577,17 +636,22 @@ func (lib *ModPath) Open(l *lua.State) int {
 	return 1
 }
 
-func (lib *ModPath) OpenLib(l *lua.State) {
+func (lib *pathMod) OpenLib(l *lua.State) {
 	lua.Require(l, lib.name, lib.Open, false)
 	l.Pop(1)
 }
 
-func (lib *ModPath) Require(l *lua.State) {
+func (lib *pathMod) Require(l *lua.State) {
 	l.Global("require")
 	l.PushString(lib.Name())
 	l.Call(1, 1)
 }
 
-func (lib *ModPath) Api(l *lua.State) struct{} {
+func (lib *pathMod) Api(l *lua.State) struct{} {
 	return struct{}{}
+}
+
+func MakeModPath() effectual.LuaMod[struct{}] {
+	sep := nativeSep()
+	return &pathMod{name: "std.path", sep: sep, altSep: altSep(sep)}
 }
