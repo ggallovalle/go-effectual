@@ -6,10 +6,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/speedata/go-lua"
-	"github.com/ggallovalle/go-effectual/fantastic4/vfs4"
 	"github.com/ggallovalle/go-effectual"
+	"github.com/ggallovalle/go-effectual/fantastic4/vfs4"
 	"github.com/ggallovalle/go-effectual/std"
+	"github.com/speedata/go-lua"
 	"github.com/spf13/cobra"
 	"github.com/twpayne/go-vfs"
 )
@@ -46,6 +46,10 @@ func main() {
 
 func runLua(cmd *cobra.Command, args []string) {
 	file := args[0]
+	fileDir, err := filepath.Abs(filepath.Dir(file))
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	l := lua.NewStateEx()
 	lua.OpenLibraries(l)
@@ -54,11 +58,16 @@ func runLua(cmd *cobra.Command, args []string) {
 	if err := stdPkg.OpenLib(l, slog.Default()); err != nil {
 		log.Fatal(err)
 	}
+	packagePath := []string{
+		filepath.Join(fileDir, "lua", "?.lua"),
+		filepath.Join(fileDir, "lua", "?", "init.lua"),
+	}
 
-	effectual.PackagePathPrepend(l, "./lua/?.lua")
-	effectual.PackagePathPrepend(l, "./lua/?/init.lua")
+	if err := effectual.PackagePathReplace(l, packagePath); err != nil {
+		log.Fatal(err)
+	}
 
-	if err := effectual.TryRequireLuarocks(l); err != nil {
+	if err := effectual.TryRequireLuarocks(l, fileDir); err != nil {
 		slog.Default().Debug("luarocks not available", "err", err)
 	}
 

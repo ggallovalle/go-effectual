@@ -13,24 +13,12 @@ func PackagePathAppend(l *lua.State, path string) {
 	packageModify(l, "path", path)
 }
 
-func PackageCPathAppend(l *lua.State, cpath string) {
-	packageModify(l, "cpath", cpath)
-}
-
 func PackagePathPrepend(l *lua.State, path string) {
 	packageModify(l, "path", path)
 }
 
-func PackageCPathPrepend(l *lua.State, cpath string) {
-	packageModify(l, "cpath", cpath)
-}
-
 func PackagePathReplace(l *lua.State, paths []string) error {
 	return packageReplace(l, "path", paths)
-}
-
-func PackageCPathReplace(l *lua.State, cpaths []string) error {
-	return packageReplace(l, "cpath", cpaths)
 }
 
 func packageModify(l *lua.State, field, value string) {
@@ -95,7 +83,7 @@ func packageReplace(l *lua.State, field string, paths []string) error {
 		}
 	}
 
-	l.Field(-1, field)
+	l.PushString(field)
 	l.PushString(result)
 	l.SetTable(-3)
 	l.Pop(1)

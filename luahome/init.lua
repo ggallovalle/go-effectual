@@ -1,7 +1,3 @@
-local log = require("std.log")
-
-log:info("hello logger", { version = _VERSION })
-
 local function collect_paths(path_str)
     if not path_str or path_str == "" then
         return {}
@@ -22,3 +18,15 @@ end
 
 print_numbered_paths("package.path", package.path)
 print_numbered_paths("package.cpath", package.cpath)
+
+local log = require("std.log")
+local dkjson = require("dkjson")
+local help = require("help")
+
+local version = dkjson.encode({
+    version = _VERSION,
+    from = "dkjson",
+    help = help,
+})
+
+log:info("hello logger", { version = _VERSION, dkjson = version })
