@@ -1,8 +1,6 @@
 package serde
 
 import (
-	"net/url"
-	"slices"
 	"strings"
 	"text/template"
 
@@ -20,71 +18,9 @@ type ModQueryApi struct {
 }
 
 const (
-	modQueryName = "std.serde.query"
+	modQueryName    = "std.serde.query"
 	slugQueryHandle = "go/std/serde/query/Query*"
 )
-
-type Query struct {
-	params url.Values
-}
-
-func NewQuery() *Query {
-	return &Query{params: url.Values{}}
-}
-
-func (q *Query) FromRaw(raw string) {
-	q.params, _ = url.ParseQuery(strings.TrimPrefix(raw, "?"))
-}
-
-func (q *Query) Size() int {
-	return len(q.params)
-}
-
-func (q *Query) Has(key string) bool {
-	_, ok := q.params[key]
-	return ok
-}
-
-func (q *Query) Get(key string) string {
-	vals := q.params[key]
-	if len(vals) == 0 {
-		return ""
-	}
-	return vals[0]
-}
-
-func (q *Query) GetAll(key string) []string {
-	return q.params[key]
-}
-
-func (q *Query) Set(key, value string) {
-	q.params[key] = []string{value}
-}
-
-func (q *Query) Append(key, value string) {
-	q.params[key] = append(q.params[key], value)
-}
-
-func (q *Query) Delete(key string) {
-	delete(q.params, key)
-}
-
-func (q *Query) Sort() {
-	keys := make([]string, 0, len(q.params))
-	for k := range q.params {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-	sorted := url.Values{}
-	for _, k := range keys {
-		sorted[k] = q.params[k]
-	}
-	q.params = sorted
-}
-
-func (q *Query) ToString() string {
-	return q.params.Encode()
-}
 
 func QueryToLua(l *lua.State, q *Query) {
 	l.PushUserData(q)
@@ -93,75 +29,6 @@ func QueryToLua(l *lua.State, q *Query) {
 
 func toQuery(l *lua.State, idx int) *Query {
 	return lua.CheckUserData(l, idx, slugQueryHandle).(*Query)
-}
-
-func queryKeys(l *lua.State) int {
-	q := toQuery(l, 1)
-	keys := make([]string, 0, len(q.params))
-	for k := range q.params {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-	l.NewTable()
-	for i, k := range keys {
-		l.PushInteger(i + 1)
-		l.PushString(k)
-		l.SetTable(-3)
-	}
-	return 1
-}
-
-func queryValues(l *lua.State) int {
-	q := toQuery(l, 1)
-	keys := make([]string, 0, len(q.params))
-	for k := range q.params {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-	vals := make([]string, 0)
-	for _, k := range keys {
-		vals = append(vals, q.params[k]...)
-	}
-	l.NewTable()
-	for i, v := range vals {
-		l.PushInteger(i + 1)
-		l.PushString(v)
-		l.SetTable(-3)
-	}
-	return 1
-}
-
-func queryEntries(l *lua.State) int {
-	q := toQuery(l, 1)
-	keys := make([]string, 0, len(q.params))
-	for k := range q.params {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-
-	l.NewTable()
-
-	i := 0
-	for _, k := range keys {
-		for _, val := range q.params[k] {
-			i++
-			l.PushInteger(i)
-			l.NewTable()
-
-			l.PushInteger(1)
-			l.PushString(k)
-			l.SetTable(-3)
-
-			l.PushInteger(2)
-			l.PushString(val)
-			l.SetTable(-3)
-
-			l.SetTable(2)
-		}
-	}
-
-	l.Replace(1)
-	return 1
 }
 
 func queryHas(l *lua.State) int {
@@ -231,6 +98,48 @@ func queryToString(l *lua.State) int {
 	return 1
 }
 
+func queryKeys(l *lua.State) int {
+	q := toQuery(l, 1)
+	keys := q.Keys()
+	l.NewTable()
+	for i, k := range keys {
+		l.PushInteger(i + 1)
+		l.PushString(k)
+		l.SetTable(-3)
+	}
+	return 1
+}
+
+func queryValues(l *lua.State) int {
+	q := toQuery(l, 1)
+	vals := q.Values()
+	l.NewTable()
+	for i, v := range vals {
+		l.PushInteger(i + 1)
+		l.PushString(v)
+		l.SetTable(-3)
+	}
+	return 1
+}
+
+func queryEntries(l *lua.State) int {
+	q := toQuery(l, 1)
+	entries := q.Entries()
+	l.NewTable()
+	for i, entry := range entries {
+		l.PushInteger(i + 1)
+		l.NewTable()
+		l.PushInteger(1)
+		l.PushString(entry[0])
+		l.SetTable(-3)
+		l.PushInteger(2)
+		l.PushString(entry[1])
+		l.SetTable(-3)
+		l.SetTable(-3)
+	}
+	return 1
+}
+
 var queryMethods = map[string]lua.Function{
 	"has":        queryHas,
 	"get":        queryGet,
@@ -261,19 +170,10 @@ var queryMetatable = []lua.RegistryFunction{
 	{Name: "__pairs", Function: func(l *lua.State) int {
 		q := toQuery(l, 1)
 		q.Sort()
-		keys := make([]string, 0, len(q.params))
-		for k := range q.params {
-			keys = append(keys, k)
-		}
-		slices.Sort(keys)
 		l.PushGoFunction(func(l *lua.State) int {
 			idx, _ := l.ToInteger(2)
 			q := toQuery(l, 1)
-			keys := make([]string, 0, len(q.params))
-			for k := range q.params {
-				keys = append(keys, k)
-			}
-			slices.Sort(keys)
+			keys := q.Keys()
 			if idx < len(keys) {
 				k := keys[idx]
 				l.PushInteger(idx + 1)
