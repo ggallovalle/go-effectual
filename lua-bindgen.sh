@@ -26,7 +26,7 @@ echo "Generating Query bindings..."
     --force-method ToString,Keys,Values,Entries
 
 echo "Generating Url bindings..."
-"$BINDGEN" generate std/mod_url.go \
+"$BINDGEN" generate std/url.go \
     --type Url \
     --module std.url \
     --skip-fields raw,portInferred \
