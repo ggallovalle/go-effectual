@@ -76,133 +76,6 @@ func (api *ModPathApi) CheckPath(index int) *Path {
 	panic("unreachable")
 }
 
-var pathMethods = map[string]lua.Function{
-	"push": func(l *lua.State) int {
-		pb := toPath(l, 1)
-		arg := toPathString(l, 2)
-		pb.Push(arg)
-		return 0
-	},
-	"pop": func(l *lua.State) int {
-		pb := toPath(l, 1)
-		l.PushBoolean(pb.Pop())
-		return 1
-	},
-	"join": func(l *lua.State) int {
-		pb := toPath(l, 1)
-		arg := toPathString(l, 2)
-		pathToLua(l, pb.Join(arg))
-		return 1
-	},
-	"ends_with": func(l *lua.State) int {
-		pb := toPath(l, 1)
-		child := toPathString(l, 2)
-		l.PushBoolean(pb.EndsWith(child))
-		return 1
-	},
-	"starts_with": func(l *lua.State) int {
-		pb := toPath(l, 1)
-		base := toPathString(l, 2)
-		l.PushBoolean(pb.StartsWith(base))
-		return 1
-	},
-	"strip_prefix": func(l *lua.State) int {
-		pb := toPath(l, 1)
-		prefix := toPathString(l, 2)
-		result, err := pb.StripPrefix(prefix)
-		if err != nil {
-			l.PushNil()
-			l.PushString(err.Error())
-			return 2
-		}
-		pathToLua(l, result)
-		return 1
-	},
-	"with_extension": func(l *lua.State) int {
-		pb := toPath(l, 1)
-		ext, _ := l.ToString(2)
-		pathToLua(l, pb.WithExtension(ext))
-		return 1
-	},
-	"with_file_name": func(l *lua.State) int {
-		pb := toPath(l, 1)
-		name, _ := l.ToString(2)
-		pathToLua(l, pb.WithFileName(name))
-		return 1
-	},
-}
-
-var pathGetters = map[string]func(*lua.State){
-	"parent": func(l *lua.State) {
-		pb := toPath(l, 1)
-		parent := pb.Parent()
-		if parent == nil {
-			l.PushNil()
-		} else {
-			pathToLua(l, parent)
-		}
-	},
-	"components": func(l *lua.State) {
-		pb := toPath(l, 1)
-		comps := pb.Components()
-		l.NewTable()
-		for i, c := range comps {
-			l.PushInteger(i + 1)
-			l.PushString(c)
-			l.SetTable(-3)
-		}
-	},
-	"ancestors": func(l *lua.State) {
-		pb := toPath(l, 1)
-		ancs := pb.Ancestors()
-		l.NewTable()
-		for i, a := range ancs {
-			l.PushInteger(i + 1)
-			pathToLua(l, a)
-			l.SetTable(-3)
-		}
-	},
-	"file_name": func(l *lua.State) {
-		pb := toPath(l, 1)
-		name := pb.FileName()
-		if name == "" {
-			l.PushNil()
-		} else {
-			l.PushString(name)
-		}
-	},
-	"extension": func(l *lua.State) {
-		pb := toPath(l, 1)
-		ext := pb.Extension()
-		if ext == "" {
-			l.PushNil()
-		} else {
-			l.PushString(ext)
-		}
-	},
-	"file_stem": func(l *lua.State) {
-		pb := toPath(l, 1)
-		stem := pb.FileStem()
-		if stem == "" {
-			l.PushNil()
-		} else {
-			l.PushString(stem)
-		}
-	},
-	"has_root": func(l *lua.State) {
-		pb := toPath(l, 1)
-		l.PushBoolean(pb.HasRoot())
-	},
-	"is_absolute": func(l *lua.State) {
-		pb := toPath(l, 1)
-		l.PushBoolean(pb.IsAbsolute())
-	},
-	"is_relative": func(l *lua.State) {
-		pb := toPath(l, 1)
-		l.PushBoolean(pb.IsRelative())
-	},
-}
-
 var pathMetatable = []lua.RegistryFunction{
 	{Name: "__tostring", Function: func(l *lua.State) int {
 		pb := toPath(l, 1)
@@ -217,7 +90,7 @@ var pathMetatable = []lua.RegistryFunction{
 			pb = pathFromStringSep(toPathString(l, 1), posixSep)
 		}
 		arg := toPathString(l, 2)
-		pathToLua(l, pb.Join(arg))
+		PathToLua(l, pb.Join(arg))
 		return 1
 	}},
 	{Name: "__concat", Function: func(l *lua.State) int {
@@ -229,9 +102,42 @@ var pathMetatable = []lua.RegistryFunction{
 	effectual.LuaMetaIndex(pathGetters, pathMethods),
 }
 
+func luaStripPrefix(l *lua.State) int {
+	pb := toPath(l, 1)
+	prefix := toPathString(l, 2)
+	result, err := pb.StripPrefix(prefix)
+	if err != nil {
+		l.PushNil()
+		l.PushString(err.Error())
+		return 2
+	}
+	PathToLua(l, result)
+	return 1
+}
+
+func luaEndsWith(l *lua.State) int {
+	pb := toPath(l, 1)
+	child := toPathString(l, 2)
+	l.PushBoolean(pb.EndsWith(child))
+	return 1
+}
+
+func luaStartsWith(l *lua.State) int {
+	pb := toPath(l, 1)
+	base := toPathString(l, 2)
+	l.PushBoolean(pb.StartsWith(base))
+	return 1
+}
+
+func init() {
+	pathMethods["strip_prefix"] = luaStripPrefix
+	pathMethods["ends_with"] = luaEndsWith
+	pathMethods["starts_with"] = luaStartsWith
+}
+
 func pathNew(sep string, l *lua.State) int {
 	s := toPathString(l, 1)
-	pathToLua(l, pathFromStringSep(s, sep))
+	PathToLua(l, pathFromStringSep(s, sep))
 	return 1
 }
 
@@ -243,7 +149,7 @@ func pathJoin(sep string, l *lua.State) int {
 		parts = append(parts, toPathString(l, i))
 	}
 	if len(parts) == 0 {
-		pathToLua(l, &Path{raw: "", sep: sep})
+		PathToLua(l, &Path{raw: "", sep: sep})
 	} else {
 		result := parts[0]
 		for i := 1; i < len(parts); i++ {
@@ -255,7 +161,7 @@ func pathJoin(sep string, l *lua.State) int {
 				result += sep + parts[i]
 			}
 		}
-		pathToLua(l, pathFromStringSep(result, sep))
+		PathToLua(l, pathFromStringSep(result, sep))
 	}
 	return 1
 }
@@ -274,9 +180,9 @@ func pathAbsolute(sep string, l *lua.State) int {
 		return 2
 	}
 	if strings.HasPrefix(s, sep) || strings.HasPrefix(s, altSep(sep)) {
-		pathToLua(l, pathFromStringSep(s, sep))
+		PathToLua(l, pathFromStringSep(s, sep))
 	} else {
-		pathToLua(l, pathFromStringSep(cwd+sep+s, sep))
+		PathToLua(l, pathFromStringSep(cwd+sep+s, sep))
 	}
 	return 1
 }

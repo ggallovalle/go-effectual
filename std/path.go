@@ -301,15 +301,6 @@ func toPathString(l *lua.State, idx int) string {
 	return ""
 }
 
-func pathToLua(l *lua.State, p *Path) {
-	l.PushUserData(p)
-	lua.SetMetaTableNamed(l, slugPathHandle)
-}
-
-func toPath(l *lua.State, idx int) *Path {
-	return lua.CheckUserData(l, idx, slugPathHandle).(*Path)
-}
-
 func pathFromStringSep(s, sep string) *Path {
 	alt := altSep(sep)
 	trimmed := strings.Trim(s, "/\\")

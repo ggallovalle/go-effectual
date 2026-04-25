@@ -6,9 +6,9 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/speedata/go-lua"
 	"github.com/ggallovalle/go-effectual"
 	"github.com/ggallovalle/go-effectual/std/serde"
+	"github.com/speedata/go-lua"
 )
 
 const (
@@ -25,36 +25,93 @@ type ModUrlApi struct {
 	lua *lua.State
 }
 
+func (api *ModUrlApi) ToUrl(index int) (*Url, bool) {
+	l := api.lua
+	v := lua.CheckUserData(l, index, slugUrlHandle)
+	if v != nil {
+		if u, ok := v.(*Url); ok {
+			return u, true
+		}
+	}
+	return nil, false
+}
+
+func (api *ModUrlApi) CheckUrl(index int) *Url {
+	if u, ok := api.ToUrl(index); ok {
+		return u
+	}
+	lua.ArgumentError(api.lua, index, "expected std.url.Url")
+	panic("unreachable")
+}
+
 type Url struct {
 	raw          string
-	scheme      string
-	host        string
-	port        *int
+	scheme       string
+	host         string
+	port         *int
 	portInferred int
-	username    *string
-	password    *string
-	path        *Path
-	query       *serde.Query
-	fragment    *string
+	username     *string
+	password     *string
+	path         *Path
+	query        *serde.Query
+	fragment     *string
 }
 
 func (u *Url) String() string {
 	return u.raw
 }
 
+func (u *Url) AddQuery(key, value string) {
+	u.query.Append(key, value)
+	rebuildUrl(u)
+}
+
+func (u *Url) RemoveQuery(key string) {
+	u.query.Delete(key)
+	rebuildUrl(u)
+}
+
+// lua:metamethod div
+func (u *Url) Div(path string) *Url {
+	newPath := u.path.Join(path)
+	newUrl := &Url{
+		raw:          u.raw,
+		scheme:       u.scheme,
+		host:         u.host,
+		port:         u.port,
+		portInferred: u.portInferred,
+		username:     u.username,
+		password:     u.password,
+		path:         newPath,
+		query:        u.query,
+		fragment:     u.fragment,
+	}
+	rebuildUrl(newUrl)
+	return newUrl
+}
+
+// lua:module new
 func urlNew(l *lua.State) int {
 	u := &Url{
 		path:  &Path{raw: "", sep: posixSep},
 		query: serde.NewQuery(),
 	}
-	urlToLua(l, u)
+	UrlToLua(l, u)
 	return 1
 }
 
+// lua:module deserialize
 func urlDeserialize(l *lua.State) int {
 	raw, _ := l.ToString(1)
 	u := parseUrl(raw)
-	urlToLua(l, u)
+	UrlToLua(l, u)
+	return 1
+}
+
+// lua:module serialize
+func urlSerialize(l *lua.State) int {
+	u := toUrl(l, 1)
+	l.PushString(u.String())
 	return 1
 }
 
@@ -124,38 +181,6 @@ func defaultPort(scheme string) int {
 	}
 }
 
-func urlSerialize(l *lua.State) int {
-	u := toUrl(l, 1)
-	l.PushString(u.String())
-	return 1
-}
-
-func urlToLua(l *lua.State, u *Url) {
-	l.PushUserData(u)
-	lua.SetMetaTableNamed(l, slugUrlHandle)
-}
-
-func toUrl(l *lua.State, idx int) *Url {
-	return lua.CheckUserData(l, idx, slugUrlHandle).(*Url)
-}
-
-func urlAddQuery(l *lua.State) int {
-	u := toUrl(l, 1)
-	key, _ := l.ToString(2)
-	value, _ := l.ToString(3)
-	u.query.Append(key, value)
-	rebuildUrl(u)
-	return 0
-}
-
-func urlRemoveQuery(l *lua.State) int {
-	u := toUrl(l, 1)
-	key, _ := l.ToString(2)
-	u.query.Delete(key)
-	rebuildUrl(u)
-	return 0
-}
-
 func rebuildUrl(u *Url) {
 	var b strings.Builder
 	if u.scheme != "" {
@@ -189,114 +214,10 @@ func rebuildUrl(u *Url) {
 	u.raw = b.String()
 }
 
-var urlMethods = map[string]lua.Function{
-	"add_query":    urlAddQuery,
-	"remove_query": urlRemoveQuery,
-}
-
-var urlGetters = map[string]func(*lua.State){
-	"scheme": func(l *lua.State) {
-		u := toUrl(l, 1)
-		if u.scheme == "" {
-			l.PushNil()
-		} else {
-			l.PushString(u.scheme)
-		}
-	},
-	"host": func(l *lua.State) {
-		u := toUrl(l, 1)
-		if u.host == "" {
-			l.PushNil()
-		} else {
-			l.PushString(u.host)
-		}
-	},
-	"port": func(l *lua.State) {
-		u := toUrl(l, 1)
-		if u.port == nil {
-			l.PushNil()
-		} else {
-			l.PushInteger(*u.port)
-		}
-	},
-	"port_inferred": func(l *lua.State) {
-		u := toUrl(l, 1)
-		l.PushInteger(u.portInferred)
-	},
-	"username": func(l *lua.State) {
-		u := toUrl(l, 1)
-		if u.username == nil {
-			l.PushNil()
-		} else {
-			l.PushString(*u.username)
-		}
-	},
-	"password": func(l *lua.State) {
-		u := toUrl(l, 1)
-		if u.password == nil {
-			l.PushNil()
-		} else {
-			l.PushString(*u.password)
-		}
-	},
-	"path": func(l *lua.State) {
-		u := toUrl(l, 1)
-		pathToLua(l, u.path)
-	},
-	"query": func(l *lua.State) {
-		u := toUrl(l, 1)
-		serde.QueryToLua(l, u.query)
-	},
-	"fragment": func(l *lua.State) {
-		u := toUrl(l, 1)
-		if u.fragment == nil {
-			l.PushNil()
-		} else {
-			l.PushString(*u.fragment)
-		}
-	},
-}
-
-var urlMetatable = []lua.RegistryFunction{
-	{Name: "__tostring", Function: func(l *lua.State) int {
-		u := toUrl(l, 1)
-		l.PushString(u.String())
-		return 1
-	}},
-	{Name: "__div", Function: func(l *lua.State) int {
-		u := toUrl(l, 1)
-		arg := toPathString(l, 2)
-		newPath := u.path.Join(arg)
-		newUrl := &Url{
-			raw:          u.raw,
-			scheme:       u.scheme,
-			host:         u.host,
-			port:         u.port,
-			portInferred: u.portInferred,
-			username:     u.username,
-			password:     u.password,
-			path:         newPath,
-			query:        u.query,
-			fragment:     u.fragment,
-		}
-		rebuildUrl(newUrl)
-		urlToLua(l, newUrl)
-		return 1
-	}},
-	effectual.LuaMetaIndex(urlGetters, urlMethods),
-}
-
-func urlLibrary() []lua.RegistryFunction {
-	return []lua.RegistryFunction{
-		{Name: "new", Function: urlNew},
-		{Name: "deserialize", Function: urlDeserialize},
-		{Name: "serialize", Function: urlSerialize},
-	}
-}
-
 var urlAnnotationsTmpl = template.Must(template.New("UrlAnnotations").Parse(`---@meta {{.module}}
 
 ---@class (exact) {{.Url}} : userdata
+---@operator div({{.Url}}|string): {{.Url}}
 ---@field scheme string|nil
 ---@field host string|nil
 ---@field port integer|nil
@@ -330,10 +251,6 @@ function url.serialize(u) end
 return url
 `))
 
-func (lib *ModUrl) Name() string {
-	return lib.name
-}
-
 func (lib *ModUrl) Annotations() string {
 	data := map[string]string{
 		"module": lib.name,
@@ -348,18 +265,22 @@ func (lib *ModUrl) Annotations() string {
 	return buf.String()
 }
 
+func (lib *ModUrl) Name() string {
+	return lib.name
+}
+
 func (lib *ModUrl) Open(l *lua.State) int {
 	lua.NewLibrary(l, urlLibrary())
 
-	lua.NewMetaTable(l, slugUrlHandle)
+	lua.NewMetaTable(l, URL_HANDLE)
 	l.PushValue(-1)
 	l.SetField(-2, "__index")
-		lua.SetFunctions(l, urlMetatable, 0)
-		for name, fn := range urlMethods {
-			l.PushGoFunction(fn)
-			l.SetField(-2, name)
-		}
-		l.Pop(1)
+	lua.SetFunctions(l, urlMetatable, 0)
+	for name, fn := range urlMethods {
+		l.PushGoFunction(fn)
+		l.SetField(-2, name)
+	}
+	l.Pop(1)
 
 	return 1
 }
