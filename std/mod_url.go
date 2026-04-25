@@ -33,7 +33,7 @@ type Url struct {
 	portInferred int
 	username    *string
 	password    *string
-	path        *PathBuf
+	path        *Path
 	query       *serde.Query
 	fragment    *string
 }
@@ -44,7 +44,7 @@ func (u *Url) String() string {
 
 func urlNew(l *lua.State) int {
 	u := &Url{
-		path:  &PathBuf{raw: "", sep: posixSep},
+		path:  &Path{raw: "", sep: posixSep},
 		query: serde.NewQuery(),
 	}
 	urlToLua(l, u)
@@ -60,7 +60,7 @@ func urlDeserialize(l *lua.State) int {
 
 func parseUrl(raw string) *Url {
 	u := &Url{
-		path:  &PathBuf{raw: "", sep: posixSep},
+		path:  &Path{raw: "", sep: posixSep},
 		query: serde.NewQuery(),
 	}
 	if raw == "" {
@@ -99,7 +99,7 @@ func parseUrl(raw string) *Url {
 	}
 
 	if parsed.Path != "" {
-		u.path = pathBufFromStringSep(parsed.Path, posixSep)
+		u.path = pathFromStringSep(parsed.Path, posixSep)
 	}
 
 	if parsed.RawQuery != "" {
@@ -241,7 +241,7 @@ var urlGetters = map[string]func(*lua.State){
 	},
 	"path": func(l *lua.State) {
 		u := toUrl(l, 1)
-		pathBufToLua(l, u.path)
+		pathToLua(l, u.path)
 	},
 	"query": func(l *lua.State) {
 		u := toUrl(l, 1)
@@ -265,8 +265,8 @@ var urlMetatable = []lua.RegistryFunction{
 	}},
 	{Name: "__div", Function: func(l *lua.State) int {
 		u := toUrl(l, 1)
-		arg := toPathBufString(l, 2)
-		newPath := u.path.join(arg)
+		arg := toPathString(l, 2)
+		newPath := u.path.Join(arg)
 		newUrl := &Url{
 			raw:          u.raw,
 			scheme:       u.scheme,
@@ -303,7 +303,7 @@ var urlAnnotationsTmpl = template.Must(template.New("UrlAnnotations").Parse(`---
 ---@field port_inferred integer
 ---@field username string|nil
 ---@field password string|nil
----@field path {{.PathBuf}}
+---@field path {{.Path}}
 ---@field query {{.Query}}
 ---@field fragment string|nil
 local Url = {}
@@ -336,10 +336,10 @@ func (lib *ModUrl) Name() string {
 
 func (lib *ModUrl) Annotations() string {
 	data := map[string]string{
-		"module":  lib.name,
-		"Url":     lib.name + ".Url",
-		"PathBuf": "std.path.PathBuf",
-		"Query":   "std.serde.query.Query",
+		"module": lib.name,
+		"Url":    lib.name + ".Url",
+		"Path":   "std.path.Path",
+		"Query":  "std.serde.query.Query",
 	}
 	var buf strings.Builder
 	if err := urlAnnotationsTmpl.Execute(&buf, data); err != nil {
