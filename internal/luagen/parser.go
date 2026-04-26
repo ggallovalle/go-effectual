@@ -12,18 +12,36 @@ type MethodComment struct {
 	NilMap     bool
 	Module     string
 	Metamethod string
+	ForceMethod bool
 }
 
-func ParseSource(sourceFile string, typeName string) (*TypeInfo, error) {
+var validAnnotationKeys = map[string]bool{
+	"skip-fields":  true,
+	"nil-map":      true,
+	"force-method": true,
+	"skip":         true,
+	"module":       true,
+	"skip-field":   true,
+	"nil-map-field": true,
+}
+
+func ParseSource(sourceFile string, typeName string) (*TypeInfo, *GenConfigAnnotation, error) {
 	fset := token.NewFileSet()
 	node, err := parser.ParseFile(fset, sourceFile, nil, parser.ParseComments)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	info := &TypeInfo{
 		Package: node.Name.Name,
 		Name:    typeName,
+	}
+
+	annotations := extractTypeAnnotations(node, typeName)
+
+	// Extract package-level module annotation (only if not already set from type annotation)
+	if annotations.Module == "" {
+		annotations.Module = extractPackageModule(node)
 	}
 
 	methodComments := extractMethodComments(node, typeName)
@@ -68,6 +86,7 @@ func ParseSource(sourceFile string, typeName string) (*TypeInfo, error) {
 			ReturnKind: returnKind,
 			PtrType:    ptrType,
 			IsNilMap:   comments.NilMap,
+			IsForceMethod: comments.ForceMethod,
 		})
 	}
 
@@ -106,7 +125,140 @@ func ParseSource(sourceFile string, typeName string) (*TypeInfo, error) {
 	// Parse struct fields
 	info.Fields = extractStructFields(node, typeName)
 
-	return info, nil
+	return info, annotations, nil
+}
+
+func extractTypeAnnotations(node *ast.File, typeName string) *GenConfigAnnotation {
+	ann := &GenConfigAnnotation{}
+
+	for _, decl := range node.Decls {
+		genDecl, ok := decl.(*ast.GenDecl)
+		if !ok || genDecl.Tok != token.TYPE {
+			continue
+		}
+		for _, spec := range genDecl.Specs {
+			typeSpec, ok := spec.(*ast.TypeSpec)
+			if !ok || typeSpec.Name.Name != typeName {
+				continue
+			}
+
+			text := extractAnnotationText(node, typeSpec, genDecl)
+			if text == "" {
+				return ann
+			}
+
+			hasLuaBindgenMarker := false
+			hasBuildTag := false
+
+			for _, line := range strings.Split(text, "\n") {
+				line = strings.TrimSpace(line)
+				if strings.Contains(line, "+lua-bindgen.sh") {
+					hasLuaBindgenMarker = true
+				}
+				if strings.Contains(line, "//go:build") && strings.Contains(line, "lua_bindgen") {
+					hasBuildTag = true
+				}
+			}
+
+			if !hasLuaBindgenMarker && !hasBuildTag {
+				return ann
+			}
+
+			for _, line := range strings.Split(text, "\n") {
+				line = strings.TrimSpace(line)
+				if !strings.HasPrefix(line, "+lua-bindgen.sh") {
+					continue
+				}
+				line = strings.TrimPrefix(line, "+lua-bindgen.sh")
+				line = strings.TrimSpace(line)
+
+				pairs := parseAnnotationLine(line)
+				for key, value := range pairs {
+					if !validAnnotationKeys[key] {
+						continue
+					}
+					switch key {
+					case "module":
+						ann.Module = value
+					case "skip-fields":
+						ann.SkipFields = parseCommaList(value)
+					case "nil-map":
+						ann.NilMap = parseCommaList(value)
+					case "force-method":
+						ann.ForceMethod = parseCommaList(value)
+					case "skip":
+						ann.Skip = parseCommaList(value)
+					}
+				}
+			}
+		}
+	}
+	return ann
+}
+
+func extractAnnotationText(node *ast.File, typeSpec *ast.TypeSpec, genDecl *ast.GenDecl) string {
+	var text string
+
+	if genDecl != nil && genDecl.Doc != nil {
+		text = genDecl.Doc.Text()
+	}
+
+	if text == "" && typeSpec.Doc != nil {
+		text = typeSpec.Doc.Text()
+	}
+
+	if text == "" {
+		for _, c := range node.Comments {
+			if strings.Contains(c.Text(), "+lua-bindgen.sh") {
+				text = c.Text()
+				break
+			}
+		}
+	}
+
+	return text
+}
+
+func extractPackageModule(node *ast.File) string {
+	for _, c := range node.Comments {
+		text := c.Text()
+		for _, line := range strings.Split(text, "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "//lua:module ") {
+				return strings.TrimSpace(strings.TrimPrefix(line, "//lua:module "))
+			}
+			if strings.HasPrefix(line, "lua:module ") {
+				return strings.TrimSpace(strings.TrimPrefix(line, "lua:module "))
+			}
+		}
+	}
+	return ""
+}
+
+func parseCommaList(s string) map[string]bool {
+	result := make(map[string]bool)
+	for _, v := range strings.Split(s, ",") {
+		v = strings.TrimSpace(v)
+		if v != "" {
+			result[v] = true
+		}
+	}
+	return result
+}
+
+func parseAnnotationLine(line string) map[string]string {
+	result := make(map[string]string)
+	pairs := strings.Fields(line)
+	for _, pair := range pairs {
+		kv := strings.SplitN(pair, "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(kv[0])
+		value := strings.TrimSpace(kv[1])
+		result[key] = value
+	}
+	return result
 }
 
 func isMethodOf(fd *ast.FuncDecl, typeName string) bool {
@@ -199,27 +351,22 @@ func extractMethodComments(node *ast.File, typeName string) map[string]MethodCom
 		mc := MethodComment{}
 		for _, line := range strings.Split(text, "\n") {
 			line = strings.TrimSpace(line)
-			if line == "//lua:skip" {
+			if line == "//lua:skip" || line == "//lua: skip" || line == "lua:skip" || line == "lua: skip" {
 				mc.Skip = true
 			}
-			_ = line
-		}
-		if strings.Contains(text, "//lua:skip") {
-			mc.Skip = true
-		}
-		if strings.Contains(text, "//lua:nil-map") {
-			mc.NilMap = true
-		}
-		// Check for //lua:metamethod <name> or lua:metamethod <name>
-		for _, line := range strings.Split(text, "\n") {
-			line = strings.TrimSpace(line)
+			if line == "//lua:nil-map" || line == "//lua: nil-map" || line == "lua:nil-map" || line == "lua: nil-map" {
+				mc.NilMap = true
+			}
+			if line == "//lua:force-method" || line == "//lua: force-method" || line == "lua:force-method" || line == "lua: force-method" {
+				mc.ForceMethod = true
+			}
 			if strings.HasPrefix(line, "//lua:metamethod ") {
 				mc.Metamethod = strings.TrimSpace(strings.TrimPrefix(line, "//lua:metamethod "))
 			} else if strings.HasPrefix(line, "lua:metamethod ") {
 				mc.Metamethod = strings.TrimSpace(strings.TrimPrefix(line, "lua:metamethod "))
 			}
 		}
-		if mc.Skip || mc.NilMap || mc.Metamethod != "" {
+		if mc.Skip || mc.NilMap || mc.ForceMethod || mc.Metamethod != "" {
 			comments[funcDecl.Name.Name] = mc
 		}
 	}
@@ -250,10 +397,22 @@ func extractStructFields(node *ast.File, typeName string) []FieldInfo {
 				if len(field.Names) == 0 {
 					continue // embedded field, skip
 				}
+				isSkipped := false
+				if field.Comment != nil {
+					text := field.Comment.Text()
+					for _, line := range strings.Split(text, "\n") {
+						line = strings.TrimSpace(line)
+						if line == "//lua:skip-field" || line == "//lua: skip-field" || line == "lua:skip-field" || line == "lua: skip-field" {
+							isSkipped = true
+							break
+						}
+					}
+				}
 				for _, name := range field.Names {
 					fields = append(fields, FieldInfo{
-						Name: name.Name,
-						Type: exprString(field.Type),
+						Name:      name.Name,
+						Type:      exprString(field.Type),
+						IsSkipped: isSkipped,
 					})
 				}
 			}

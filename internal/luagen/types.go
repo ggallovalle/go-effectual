@@ -14,6 +14,18 @@ type GenConfig struct {
 	SourceDir   string
 }
 
+type GenConfigAnnotation struct {
+	Module     string
+	Skip       map[string]bool
+	NilMap     map[string]bool
+	ForceMethod map[string]bool
+	SkipFields map[string]bool
+}
+
+func (a *GenConfigAnnotation) IsEmpty() bool {
+	return a.Module == "" && len(a.Skip) == 0 && len(a.NilMap) == 0 && len(a.ForceMethod) == 0 && len(a.SkipFields) == 0
+}
+
 type ParamInfo struct {
 	Name string
 	Type string
@@ -42,6 +54,7 @@ type MethodInfo struct {
 	IsGetter   bool
 	IsSkipped  bool
 	IsNilMap   bool
+	IsForceMethod bool
 	PtrType    string
 }
 

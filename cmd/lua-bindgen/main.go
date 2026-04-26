@@ -34,7 +34,6 @@ func main() {
 	generateCmd.Flags().String("output", "", "Output directory (default: same as source)")
 
 	_ = generateCmd.MarkFlagRequired("type")
-	_ = generateCmd.MarkFlagRequired("module")
 
 	rootCmd.AddCommand(generateCmd)
 
@@ -56,7 +55,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	importList, _ := cmd.Flags().GetStringSlice("import")
 	outputDir, _ := cmd.Flags().GetString("output")
 
-	info, err := luagen.ParseSource(sourceFile, typeName)
+	info, annotations, err := luagen.ParseSource(sourceFile, typeName)
 	if err != nil {
 		return fmt.Errorf("parse source: %w", err)
 	}
@@ -69,20 +68,40 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	for _, s := range skipList {
 		skip[s] = true
 	}
+	for k, v := range annotations.Skip {
+		if _, exists := skip[k]; !exists {
+			skip[k] = v
+		}
+	}
 
 	nilMap := make(map[string]bool)
 	for _, s := range nilMapList {
 		nilMap[s] = true
+	}
+	for k, v := range annotations.NilMap {
+		if _, exists := nilMap[k]; !exists {
+			nilMap[k] = v
+		}
 	}
 
 	forceMethod := make(map[string]bool)
 	for _, s := range forceMethodList {
 		forceMethod[s] = true
 	}
+	for k, v := range annotations.ForceMethod {
+		if _, exists := forceMethod[k]; !exists {
+			forceMethod[k] = v
+		}
+	}
 
 	skipFields := make(map[string]bool)
 	for _, s := range skipFieldsList {
 		skipFields[s] = true
+	}
+	for k, v := range annotations.SkipFields {
+		if _, exists := skipFields[k]; !exists {
+			skipFields[k] = v
+		}
 	}
 
 	imports := make(map[string]string)
@@ -104,6 +123,10 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		ForceMethod: forceMethod,
 		SkipFields:  skipFields,
 		Imports:     imports,
+	}
+
+	if cfg.Module == "" {
+		cfg.Module = annotations.Module
 	}
 
 	luagen.Classify(info, cfg)

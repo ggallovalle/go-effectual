@@ -33,7 +33,7 @@ func Generate(info *TypeInfo, cfg *GenConfig) string {
 
 	// Field getters
 	for _, f := range info.Fields {
-		if cfg.IsFieldSkipped(f.Name) {
+		if cfg.IsFieldSkipped(f.Name) || f.IsSkipped {
 			continue
 		}
 		b.WriteString(genFieldGetter(info, f))

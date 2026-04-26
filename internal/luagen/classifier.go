@@ -31,7 +31,7 @@ func isGetter(m *MethodInfo, cfg *GenConfig) bool {
 	if m.IsSkipped {
 		return false
 	}
-	if cfg.IsForceMethod(m.Name) {
+	if cfg.IsForceMethod(m.Name) || m.IsForceMethod {
 		return false
 	}
 	if len(m.Params) != 0 {

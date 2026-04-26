@@ -6,8 +6,10 @@ import (
 	"strings"
 )
 
+// lua:module std.serde.query
+
 type Query struct {
-	params url.Values
+	params url.Values //lua: skip-field
 }
 
 func NewQuery() *Query {
@@ -27,6 +29,7 @@ func (q *Query) Has(key string) bool {
 	return ok
 }
 
+//lua: nil-map
 func (q *Query) Get(key string) string {
 	vals := q.params[key]
 	if len(vals) == 0 {
@@ -64,10 +67,12 @@ func (q *Query) Sort() {
 	q.params = sorted
 }
 
+//lua: force-method
 func (q *Query) ToString() string {
 	return q.params.Encode()
 }
 
+//lua: force-method
 func (q *Query) Keys() []string {
 	keys := make([]string, 0, len(q.params))
 	for k := range q.params {
@@ -77,6 +82,7 @@ func (q *Query) Keys() []string {
 	return keys
 }
 
+//lua: force-method
 func (q *Query) Values() []string {
 	keys := make([]string, 0, len(q.params))
 	for k := range q.params {
@@ -90,6 +96,7 @@ func (q *Query) Values() []string {
 	return vals
 }
 
+//lua: force-method
 func (q *Query) Entries() [][2]string {
 	keys := make([]string, 0, len(q.params))
 	for k := range q.params {

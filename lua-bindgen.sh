@@ -19,11 +19,7 @@ echo "Generating Path bindings..."
 
 echo "Generating Query bindings..."
 "$BINDGEN" generate std/serde/query.go \
-    --type Query \
-    --module std.serde.query \
-    --skip-fields params \
-    --nil-map Get \
-    --force-method ToString,Keys,Values,Entries
+    --type Query
 
 echo "Generating Url bindings..."
 "$BINDGEN" generate std/url.go \
