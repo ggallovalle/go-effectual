@@ -29,7 +29,8 @@ func MakeModSemver() effectual.LuaMod[ModSemverApi] {
 }
 
 type RangeWrapper struct {
-	r semver.Range
+	r       semver.Range
+	origStr string
 }
 
 func (r *RangeWrapper) Contains(v semver.Version) bool {
@@ -37,11 +38,19 @@ func (r *RangeWrapper) Contains(v semver.Version) bool {
 }
 
 func (r *RangeWrapper) And(other *RangeWrapper) *RangeWrapper {
-	return &RangeWrapper{r: r.r.AND(other.r)}
+	result := &RangeWrapper{r: r.r.AND(other.r)}
+	if r.origStr != "" && other.origStr != "" {
+		result.origStr = r.origStr + " AND " + other.origStr
+	}
+	return result
 }
 
 func (r *RangeWrapper) Or(other *RangeWrapper) *RangeWrapper {
-	return &RangeWrapper{r: r.r.OR(other.r)}
+	result := &RangeWrapper{r: r.r.OR(other.r)}
+	if r.origStr != "" && other.origStr != "" {
+		result.origStr = r.origStr + " OR " + other.origStr
+	}
+	return result
 }
 
 func rangeWrapperToLua(l *lua.State, rw *RangeWrapper) {
@@ -115,6 +124,15 @@ var versionMetatable = []lua.RegistryFunction{
 }
 
 var rangeMetatable = []lua.RegistryFunction{
+	{Name: "__tostring", Function: func(l *lua.State) int {
+		rw := toRangeWrapper(l, 1)
+		if rw.origStr != "" {
+			l.PushString(rw.origStr)
+		} else {
+			l.PushString("<range>")
+		}
+		return 1
+	}},
 	{Name: "__index", Function: func(l *lua.State) int {
 		key := lua.CheckString(l, 2)
 		switch key {
@@ -166,7 +184,7 @@ var semverLibrary = []lua.RegistryFunction{
 			lua.Errorf(l, "%s", err.Error())
 			panic("unreachable")
 		}
-		rw := &RangeWrapper{r: r}
+		rw := &RangeWrapper{r: r, origStr: s}
 		rangeWrapperToLua(l, rw)
 		return 1
 	}},

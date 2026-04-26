@@ -1,6 +1,7 @@
 package std_test
 
 import (
+	"strings"
 	"testing"
 
 	lua "github.com/speedata/go-lua"
@@ -251,4 +252,128 @@ func Test_LibGoTesting_Expect_Fail(t *testing.T) {
 		assert.Contains(t, err.Error(), "actual 1")
 		assert.NotContains(t, err.Error(), "expr:")
 	})
+
+	t.Run("failure message shows expression when available", func(t *testing.T) {
+		l := setupTestingCtx(t)
+		err := lua.DoString(l, `ctx:expect(1):equals(2)`)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "expected")
+		assert.Contains(t, err.Error(), "actual")
+	})
+
+	t.Run("custom msg shows no expression backticks", func(t *testing.T) {
+		l := setupTestingCtx(t)
+		err := lua.DoString(l, `ctx:expect(1, "custom"):equals(2)`)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "custom")
+		assert.NotContains(t, err.Error(), "`")
+	})
+}
+
+func Test_ExtractExpressionVariables(t *testing.T) {
+	t.Run("extracts simple variable", func(t *testing.T) {
+		vars := extractTestExpressionVariables("foo")
+		assert.Equal(t, []string{"foo"}, vars)
+	})
+
+	t.Run("extracts multiple variables", func(t *testing.T) {
+		vars := extractTestExpressionVariables("a + b")
+		assert.Equal(t, []string{"a", "b"}, vars)
+	})
+
+	t.Run("filters lua keywords", func(t *testing.T) {
+		vars := extractTestExpressionVariables("a and b or not c")
+		assert.Equal(t, []string{"a", "b", "c"}, vars)
+	})
+
+	t.Run("filters method names", func(t *testing.T) {
+		vars := extractTestExpressionVariables("obj:method()")
+		assert.Equal(t, []string{"obj"}, vars)
+	})
+
+	t.Run("handles table field access", func(t *testing.T) {
+		vars := extractTestExpressionVariables("obj.field")
+		assert.Equal(t, []string{"obj"}, vars)
+	})
+
+	t.Run("handles complex expressions", func(t *testing.T) {
+		vars := extractTestExpressionVariables("r:contains(v1)")
+		assert.Equal(t, []string{"r", "v1"}, vars)
+	})
+}
+
+func extractTestExpressionVariables(expr string) []string {
+	var vars []string
+	var current strings.Builder
+	inIdentifier := false
+	var lastIdentStart int
+
+	luaKeywords := map[string]bool{
+		"and": true, "break": true, "do": true, "else": true, "elseif": true,
+		"end": true, "false": true, "for": true, "function": true, "if": true,
+		"in": true, "local": true, "nil": true, "not": true, "or": true,
+		"repeat": true, "return": true, "then": true, "true": true, "until": true, "while": true,
+	}
+
+	isIdentChar := func(ch byte) bool {
+		return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_'
+	}
+
+	isOperatorChar := func(ch byte) bool {
+		return strings.ContainsAny(string(ch), "+-*/%^#==~=<>[]{}();,")
+	}
+
+	isMethodName := func(expr string, identStart int, identEnd int) bool {
+		if identStart <= 0 {
+			return false
+		}
+		prev := identStart - 1
+		if expr[prev] == ':' || expr[prev] == '.' {
+			return true
+		}
+		return false
+	}
+
+	for i := 0; i < len(expr); i++ {
+		ch := expr[i]
+
+		if isIdentChar(ch) {
+			if !inIdentifier {
+				lastIdentStart = i
+			}
+			current.WriteByte(ch)
+			inIdentifier = true
+		} else {
+			if inIdentifier {
+				ident := current.String()
+				current.Reset()
+				inIdentifier = false
+				if !luaKeywords[ident] && !isMethodName(expr, lastIdentStart, i) {
+					vars = append(vars, ident)
+				}
+			}
+			if isOperatorChar(ch) {
+				if ch == ':' || ch == '.' {
+					continue
+				}
+				if inIdentifier {
+					ident := current.String()
+					current.Reset()
+					inIdentifier = false
+					if !luaKeywords[ident] && !isMethodName(expr, lastIdentStart, i) {
+						vars = append(vars, ident)
+					}
+				}
+			}
+		}
+	}
+
+	if inIdentifier {
+		ident := current.String()
+		if !luaKeywords[ident] && !isMethodName(expr, lastIdentStart, len(expr)) {
+			vars = append(vars, ident)
+		}
+	}
+
+	return vars
 }

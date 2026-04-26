@@ -218,6 +218,13 @@ var testCtxMethods = map[string]lua.Function{
 			e.msg, _ = l.ToString(3)
 		}
 
+		lua.Where(l, 1)
+		e.exprLocation, _ = l.ToString(-1)
+		l.Pop(1)
+
+		expr := extractExpectExpr(l, e.exprLocation)
+		e.exprString = expr
+
 		l.PushUserData(e)
 		lua.SetMetaTableNamed(l, slugExpectHandle)
 		return 1
@@ -229,29 +236,192 @@ var testCtxMetatable = []lua.RegistryFunction{
 }
 
 type expectObj struct {
-	t     *testing.T
-	value any
-	msg   string
+	t            *testing.T
+	value        any
+	msg          string
+	exprLocation string
+	exprString   string
 }
 
 func toExpect(l *lua.State) *expectObj {
 	return lua.CheckUserData(l, 1, slugExpectHandle).(*expectObj)
 }
 
+func findLuaFrame(l *lua.State, startLevel int) (lua.Frame, int, bool) {
+	for level := startLevel; ; level++ {
+		ci, ok := lua.Stack(l, level)
+		if !ok {
+			return nil, 0, false
+		}
+		d, ok := lua.Info(l, "S", ci)
+		if ok && d.What == "Lua" {
+			return ci, level, true
+		}
+	}
+}
+
+func collectLocalVariables(l *lua.State, level int) map[string]string {
+	result := make(map[string]string)
+
+	for testLevel := level; testLevel <= level+10; testLevel++ {
+		script := fmt.Sprintf(`
+			local lvl = %d
+			local results = {}
+			for i = 1, 100 do
+				local name, val = debug.getlocal(lvl, i)
+				if name == nil then break end
+				if name ~= "(vararg)" and name ~= "(temporary)" and name ~= "(C temporary)" then
+					local ok, str = pcall(tostring, val)
+					if ok then
+						results[name] = str
+					else
+						results[name] = tostring(val)
+					end
+				end
+			end
+			return results
+		`, testLevel)
+
+		if err := lua.LoadString(l, script); err != nil {
+			continue
+		}
+		if err := l.ProtectedCall(0, 1, 0); err != nil {
+			l.Pop(1)
+			continue
+		}
+
+		if l.IsTable(-1) {
+			l.PushNil()
+			for l.Next(-2) {
+				if keyStr, ok := l.ToString(-2); ok {
+					if valStr, ok := l.ToString(-1); ok {
+						if keyStr != "(C temporary)" && keyStr != "(vararg)" && keyStr != "(temporary)" {
+							result[keyStr] = valStr
+						}
+					}
+				}
+				l.Pop(1)
+			}
+		}
+		l.Pop(1)
+
+		if len(result) > 0 {
+			break
+		}
+	}
+
+	return result
+}
+
+var luaKeywords = map[string]bool{
+	"and": true, "break": true, "do": true, "else": true, "elseif": true,
+	"end": true, "false": true, "for": true, "function": true, "if": true,
+	"in": true, "local": true, "nil": true, "not": true, "or": true,
+	"repeat": true, "return": true, "then": true, "true": true, "until": true, "while": true,
+}
+
+func extractExpressionVariables(expr string) []string {
+	var vars []string
+	var current strings.Builder
+	inIdentifier := false
+	var identStart int
+
+	for i := 0; i < len(expr); i++ {
+		ch := expr[i]
+
+		if isIdentChar(ch) {
+			if !inIdentifier {
+				identStart = i
+			}
+			current.WriteByte(ch)
+			inIdentifier = true
+		} else {
+			if inIdentifier {
+				ident := current.String()
+				current.Reset()
+				inIdentifier = false
+				if !luaKeywords[ident] && !isMethodName(expr, identStart) {
+					vars = append(vars, ident)
+				}
+			}
+			if isOperatorChar(ch) {
+				if ch == ':' || ch == '.' {
+					continue
+				}
+				if inIdentifier {
+					ident := current.String()
+					current.Reset()
+					inIdentifier = false
+					if !luaKeywords[ident] && !isMethodName(expr, identStart) {
+						vars = append(vars, ident)
+					}
+				}
+			}
+		}
+	}
+
+	if inIdentifier {
+		ident := current.String()
+		if !luaKeywords[ident] && !isMethodName(expr, identStart) {
+			vars = append(vars, ident)
+		}
+	}
+
+	return vars
+}
+
+func isIdentChar(ch byte) bool {
+	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_'
+}
+
+func isOperatorChar(ch byte) bool {
+	return strings.ContainsAny(string(ch), "+-*/%^#==~=<>[]{}();,")
+}
+
+func isMethodName(expr string, identStart int) bool {
+	if identStart > 0 && (expr[identStart-1] == ':' || expr[identStart-1] == '.') {
+		return true
+	}
+	return false
+}
+
 func expectFail(l *lua.State, expected, actual string) {
 	e := toExpect(l)
 
-	lua.Where(l, 1)
-	loc, _ := l.ToString(-1)
-	l.Pop(1)
-
-	expr := extractExpectExpr(l, loc)
+	loc := e.exprLocation
+	expr := e.exprString
 
 	var msg string
 	if e.msg != "" {
 		msg = fmt.Sprintf("%s%s - expected %s, actual %s", loc, e.msg, expected, actual)
 	} else if expr != "" {
-		msg = fmt.Sprintf("%sexpected (expr: %s) %s, actual %s", loc, expr, expected, actual)
+		vars := extractExpressionVariables(expr)
+		varValues := make(map[string]string)
+		for _, v := range vars {
+			varValues[v] = "?"
+		}
+
+		if len(vars) > 0 {
+			_, level, found := findLuaFrame(l, 0)
+			if found {
+				locals := collectLocalVariables(l, level+1)
+				for k, v := range locals {
+					if _, exists := varValues[k]; exists {
+						varValues[k] = v
+					}
+				}
+			}
+		}
+
+		var varLines []string
+		for _, v := range vars {
+			varLines = append(varLines, fmt.Sprintf("- %s = %s", v, varValues[v]))
+		}
+		if len(varLines) > 0 {
+			msg = fmt.Sprintf("%sexpected `%s` %s, actual %s\n%s", loc, expr, expected, actual, strings.Join(varLines, "\n"))
+		} else {
+			msg = fmt.Sprintf("%sexpected `%s` %s, actual %s", loc, expr, expected, actual)
+		}
 	} else {
 		msg = fmt.Sprintf("%sexpected %s, actual %s", loc, expected, actual)
 	}
