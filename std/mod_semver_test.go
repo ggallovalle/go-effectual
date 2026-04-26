@@ -14,6 +14,7 @@ func TestLuaSuite(t *testing.T) {
 	l := lua.NewState()
 	lua.OpenLibraries(l)
 	effectual.LuaModOpen(l, sut.MakeModSemver())
+	effectual.LuaModOpen(l, sut.MakeModTesting())
 
 	testFile := filepath.Join("..", "luahome", "std-test", "semver_test.lua")
 	runLuaSuite(t, l, testFile)
