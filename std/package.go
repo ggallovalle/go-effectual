@@ -13,18 +13,20 @@ import (
 )
 
 type StdPackage struct {
-	modSlog  effectual.LuaMod[ModSlogApi]
-	modPath  effectual.LuaMod[ModPathApi]
-	modUrl   effectual.LuaMod[ModUrlApi]
-	modQuery effectual.LuaMod[serde.ModQueryApi]
+	modSlog   effectual.LuaMod[ModSlogApi]
+	modPath   effectual.LuaMod[ModPathApi]
+	modUrl    effectual.LuaMod[ModUrlApi]
+	modQuery  effectual.LuaMod[serde.ModQueryApi]
+	modSemver effectual.LuaMod[ModSemverApi]
 }
 
 func NewStdPackage() *StdPackage {
 	return &StdPackage{
-		modSlog:  MakeModSlog(),
-		modPath:  MakeModPath(),
-		modUrl:   MakeModUrl(),
-		modQuery: serde.MakeModQuery(),
+		modSlog:   MakeModSlog(),
+		modPath:   MakeModPath(),
+		modUrl:    MakeModUrl(),
+		modQuery:  serde.MakeModQuery(),
+		modSemver: MakeModSemver(),
 	}
 }
 
@@ -37,6 +39,7 @@ func (s *StdPackage) OpenLib(l *lua.State, logger *slog.Logger) error {
 	s.modPath.OpenLib(l)
 	s.modUrl.OpenLib(l)
 	s.modQuery.OpenLib(l)
+	s.modSemver.OpenLib(l)
 
 	slogApi := s.modSlog.Api(l)
 	slogApi.SetDefault(logger)
@@ -50,6 +53,7 @@ func (s *StdPackage) GenerateAnnotations(fs vfs.FS, folder string) error {
 		s.modPath,
 		s.modUrl,
 		s.modQuery,
+		s.modSemver,
 	}
 
 	for _, mod := range mods {
