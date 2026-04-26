@@ -31,14 +31,14 @@ local semver = {}
 
 --- Creates a new Version from a string
 ---@param version string (e.g., "1.2.3")
----@return std.semver.Version?
----@return string? Error message if version string is invalid
+---@return std.semver.Version
+---@raise if version string is invalid
 function semver.new(version) end
 
 --- Creates a new Range from a semver range string
 ---@param range string (e.g., ">=1.0.0 <2.0.0")
----@return std.semver.Range?
----@return string? Error message if range string is invalid
+---@return std.semver.Range
+---@raise if range string is invalid
 function semver.range_new(range) end
 
 return semver

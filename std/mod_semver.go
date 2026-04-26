@@ -153,9 +153,8 @@ var semverLibrary = []lua.RegistryFunction{
 		s, _ := l.ToString(1)
 		v, err := semver.New(s)
 		if err != nil {
-			l.PushNil()
-			l.PushString(err.Error())
-			return 2
+			lua.Errorf(l, "%s", err.Error())
+			panic("unreachable")
 		}
 		versionToLua(l, v)
 		return 1
@@ -164,9 +163,8 @@ var semverLibrary = []lua.RegistryFunction{
 		s, _ := l.ToString(1)
 		r, err := semver.ParseRange(s)
 		if err != nil {
-			l.PushNil()
-			l.PushString(err.Error())
-			return 2
+			lua.Errorf(l, "%s", err.Error())
+			panic("unreachable")
 		}
 		rw := &RangeWrapper{r: r}
 		rangeWrapperToLua(l, rw)
@@ -244,14 +242,14 @@ local semver = {}
 
 --- Creates a new Version from a string
 ---@param version string (e.g., "1.2.3")
----@return {{.Version}}?
----@return string? Error message if version string is invalid
+---@return {{.Version}}
+---@raise if version string is invalid
 function semver.new(version) end
 
 --- Creates a new Range from a semver range string
 ---@param range string (e.g., ">=1.0.0 <2.0.0")
----@return {{.Range}}?
----@return string? Error message if range string is invalid
+---@return {{.Range}}
+---@raise if range string is invalid
 function semver.range_new(range) end
 
 return semver

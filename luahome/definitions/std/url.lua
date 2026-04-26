@@ -7,7 +7,7 @@
 ---@field port_inferred integer
 ---@field username string|nil
 ---@field password string|nil
----@field path std.path.PathBuf
+---@field path std.path.Path
 ---@field query std.serde.query.Query
 ---@field fragment string|nil
 local Url = {}

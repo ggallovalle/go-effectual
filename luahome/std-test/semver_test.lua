@@ -6,9 +6,8 @@ local Suite = {
 		{
 			name = "Version: new() valid",
 			fn = function(_ctx)
-				local v, err = semver.new("1.2.3")
+				local v = semver.new("1.2.3")
 				assert(v ~= nil, "expected version")
-				assert(err == nil, "expected no error")
 				assert(v.major == 1, "expected major == 1")
 				assert(v.minor == 2, "expected minor == 2")
 				assert(v.patch == 3, "expected patch == 3")
@@ -17,9 +16,9 @@ local Suite = {
 		{
 			name = "Version: new() invalid",
 			fn = function(_ctx)
-				local v, err = semver.new("not-a-version")
-				assert(v == nil, "expected nil version")
-				assert(err ~= nil, "expected error")
+				local ok, err = pcall(semver.new, "not-a-version")
+				assert(not ok, "expected error")
+				assert(err ~= nil, "expected error message")
 			end,
 		},
 		{
@@ -61,23 +60,22 @@ local Suite = {
 		{
 			name = "Range: range_new() valid",
 			fn = function(_ctx)
-				local r, err = semver.range_new(">=1.0.0 <2.0.0")
+				local r = semver.range_new(">=1.0.0 <2.0.0")
 				assert(r ~= nil, "expected range")
-				assert(err == nil, "expected no error")
 			end,
 		},
 		{
 			name = "Range: range_new() invalid",
 			fn = function(_ctx)
-				local r, err = semver.range_new("not-a-range")
-				assert(r == nil, "expected nil range")
-				assert(err ~= nil, "expected error")
+				local ok, err = pcall(semver.range_new, "not-a-range")
+				assert(not ok, "expected error")
+				assert(err ~= nil, "expected error message")
 			end,
 		},
 		{
 			name = "Range: contains",
 			fn = function(_ctx)
-				local r, _ = semver.range_new(">=1.0.0 <2.0.0")
+				local r = semver.range_new(">=1.0.0 <2.0.0")
 				local v1 = semver.new("1.5.0")
 				local v2 = semver.new("2.0.0")
 				assert(r:contains(v1), "expected 1.5.0 to be contained")
