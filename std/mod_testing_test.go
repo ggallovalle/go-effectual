@@ -92,3 +92,163 @@ func setupTestingCtx(t *testing.T) *lua.State {
 
 	return l
 }
+
+func Test_LibGoTesting_Expect_Pass(t *testing.T) {
+	t.Run("is_nil passes on nil", func(t *testing.T) {
+		l := setupTestingCtx(t)
+		err := lua.DoString(l, `ctx:expect(nil):is_nil()`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("not_nil passes on non-nil", func(t *testing.T) {
+		l := setupTestingCtx(t)
+		err := lua.DoString(l, `ctx:expect(42):not_nil()`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("is_true passes on true", func(t *testing.T) {
+		l := setupTestingCtx(t)
+		err := lua.DoString(l, `ctx:expect(true):is_true()`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("is_false passes on false", func(t *testing.T) {
+		l := setupTestingCtx(t)
+		err := lua.DoString(l, `ctx:expect(false):is_false()`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("equals passes on equal values", func(t *testing.T) {
+		l := setupTestingCtx(t)
+		err := lua.DoString(l, `ctx:expect(1):equals(1)`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("equals passes on equal strings", func(t *testing.T) {
+		l := setupTestingCtx(t)
+		err := lua.DoString(l, `ctx:expect("hello"):equals("hello")`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("not_equals passes on unequal values", func(t *testing.T) {
+		l := setupTestingCtx(t)
+		err := lua.DoString(l, `ctx:expect(1):not_equals(2)`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("is_lt passes when less", func(t *testing.T) {
+		l := setupTestingCtx(t)
+		err := lua.DoString(l, `ctx:expect(1):is_lt(2)`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("not_lt passes when not less", func(t *testing.T) {
+		l := setupTestingCtx(t)
+		err := lua.DoString(l, `ctx:expect(2):not_lt(1)`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("is_le passes when equal", func(t *testing.T) {
+		l := setupTestingCtx(t)
+		err := lua.DoString(l, `ctx:expect(1):is_le(1)`)
+		assert.NoError(t, err)
+	})
+
+	t.Run("not_le passes when greater", func(t *testing.T) {
+		l := setupTestingCtx(t)
+		err := lua.DoString(l, `ctx:expect(2):not_le(1)`)
+		assert.NoError(t, err)
+	})
+}
+
+func Test_LibGoTesting_Expect_Fail(t *testing.T) {
+	t.Run("is_nil fails on non-nil", func(t *testing.T) {
+		l := setupTestingCtx(t)
+		err := lua.DoString(l, `ctx:expect(42):is_nil()`)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "expected nil")
+		assert.Contains(t, err.Error(), "actual 42")
+	})
+
+	t.Run("not_nil fails on nil", func(t *testing.T) {
+		l := setupTestingCtx(t)
+		err := lua.DoString(l, `ctx:expect(nil):not_nil()`)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "expected non-nil")
+		assert.Contains(t, err.Error(), "actual nil")
+	})
+
+	t.Run("is_true fails on false", func(t *testing.T) {
+		l := setupTestingCtx(t)
+		err := lua.DoString(l, `ctx:expect(false):is_true()`)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "expected true")
+		assert.Contains(t, err.Error(), "actual false")
+	})
+
+	t.Run("is_false fails on true", func(t *testing.T) {
+		l := setupTestingCtx(t)
+		err := lua.DoString(l, `ctx:expect(true):is_false()`)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "expected false")
+		assert.Contains(t, err.Error(), "actual true")
+	})
+
+	t.Run("equals fails on unequal", func(t *testing.T) {
+		l := setupTestingCtx(t)
+		err := lua.DoString(l, `ctx:expect(1):equals(2)`)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "expected 2")
+		assert.Contains(t, err.Error(), "actual 1")
+	})
+
+	t.Run("not_equals fails on equal", func(t *testing.T) {
+		l := setupTestingCtx(t)
+		err := lua.DoString(l, `ctx:expect(1):not_equals(1)`)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "expected not 1")
+		assert.Contains(t, err.Error(), "actual 1")
+	})
+
+	t.Run("is_lt fails when not less", func(t *testing.T) {
+		l := setupTestingCtx(t)
+		err := lua.DoString(l, `ctx:expect(2):is_lt(1)`)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "expected < 1")
+		assert.Contains(t, err.Error(), "actual 2")
+	})
+
+	t.Run("not_lt fails when less", func(t *testing.T) {
+		l := setupTestingCtx(t)
+		err := lua.DoString(l, `ctx:expect(1):not_lt(2)`)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "expected not < 2")
+		assert.Contains(t, err.Error(), "actual 1")
+	})
+
+	t.Run("is_le fails when greater", func(t *testing.T) {
+		l := setupTestingCtx(t)
+		err := lua.DoString(l, `ctx:expect(2):is_le(1)`)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "expected <= 1")
+		assert.Contains(t, err.Error(), "actual 2")
+	})
+
+	t.Run("not_le fails when less or equal", func(t *testing.T) {
+		l := setupTestingCtx(t)
+		err := lua.DoString(l, `ctx:expect(1):not_le(1)`)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "expected not <= 1")
+		assert.Contains(t, err.Error(), "actual 1")
+	})
+
+	t.Run("custom msg overrides expression", func(t *testing.T) {
+		l := setupTestingCtx(t)
+		err := lua.DoString(l, `ctx:expect(1, "check this"):equals(2)`)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "check this")
+		assert.Contains(t, err.Error(), "expected 2")
+		assert.Contains(t, err.Error(), "actual 1")
+		assert.NotContains(t, err.Error(), "expr:")
+	})
+}

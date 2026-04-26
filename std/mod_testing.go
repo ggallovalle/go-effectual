@@ -1,7 +1,10 @@
 package std
 
 import (
+	"bufio"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -11,8 +14,9 @@ import (
 )
 
 const (
-	ModTestingName     = "std.testing"
-	slugTestCtxHandle = "go/std/testing/TestCtx*"
+	ModTestingName      = "std.testing"
+	slugTestCtxHandle   = "go/std/testing/TestCtx*"
+	slugExpectHandle    = "go/std/testing/Expect*"
 )
 
 type ModTesting struct {
@@ -47,6 +51,12 @@ func (lib *ModTesting) Open(l *lua.State) int {
 	l.PushValue(-1)
 	l.SetField(-2, "__index")
 	lua.SetFunctions(l, testCtxMetatable, 0)
+	l.Pop(1)
+
+	lua.NewMetaTable(l, slugExpectHandle)
+	l.PushValue(-1)
+	l.SetField(-2, "__index")
+	lua.SetFunctions(l, expectMetatable, 0)
 	l.Pop(1)
 
 	return 1
@@ -189,8 +199,320 @@ var testCtxMethods = map[string]lua.Function{
 		tc.t.Log(loc + msg)
 		return 0
 	},
+	"expect": func(l *lua.State) int {
+		tc := toTestCtx(l)
+
+		e := &expectObj{t: tc.t}
+
+		if l.Top() >= 2 {
+			if l.TypeOf(2) == lua.TypeUserData {
+				e.value = l.ToUserData(2)
+			} else {
+				e.value = effectual.ConvertLuaToAny(l, 2)
+			}
+		} else {
+			e.value = nil
+		}
+
+		if l.Top() >= 3 && l.TypeOf(3) == lua.TypeString {
+			e.msg, _ = l.ToString(3)
+		}
+
+		l.PushUserData(e)
+		lua.SetMetaTableNamed(l, slugExpectHandle)
+		return 1
+	},
 }
 
 var testCtxMetatable = []lua.RegistryFunction{
 	effectual.LuaMetaIndex(testCtxGetters, testCtxMethods),
+}
+
+type expectObj struct {
+	t     *testing.T
+	value any
+	msg   string
+}
+
+func toExpect(l *lua.State) *expectObj {
+	return lua.CheckUserData(l, 1, slugExpectHandle).(*expectObj)
+}
+
+func expectFail(l *lua.State, expected, actual string) {
+	e := toExpect(l)
+
+	lua.Where(l, 1)
+	loc, _ := l.ToString(-1)
+	l.Pop(1)
+
+	expr := extractExpectExpr(l, loc)
+
+	var msg string
+	if e.msg != "" {
+		msg = fmt.Sprintf("%s%s - expected %s, actual %s", loc, e.msg, expected, actual)
+	} else if expr != "" {
+		msg = fmt.Sprintf("%sexpected (expr: %s) %s, actual %s", loc, expr, expected, actual)
+	} else {
+		msg = fmt.Sprintf("%sexpected %s, actual %s", loc, expected, actual)
+	}
+
+	l.PushString(msg)
+	l.Error()
+}
+
+func extractExpectExpr(l *lua.State, loc string) string {
+	// loc is like "file.lua:10: " — format is path:line: suffix
+	// Find last ": " to separate line number from trailing space
+	suffixIdx := strings.LastIndex(loc, ": ")
+	if suffixIdx == -1 {
+		return ""
+	}
+	beforeSuffix := loc[:suffixIdx]
+	// Find last ":" in "path:line" to extract line number
+	colonIdx := strings.LastIndex(beforeSuffix, ":")
+	if colonIdx == -1 {
+		return ""
+	}
+	lineStr := beforeSuffix[colonIdx+1:]
+	lineNum, err := strconv.Atoi(lineStr)
+	if err != nil {
+		return ""
+	}
+
+	filePath := beforeSuffix[:colonIdx]
+	// Handle [string "..."] case - can't read source
+	if strings.HasPrefix(filePath, "[string") {
+		return ""
+	}
+
+	f, err := os.Open(filePath)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for i := 1; scanner.Scan(); i++ {
+		if i == lineNum {
+			return parseExpectExpr(scanner.Text())
+		}
+	}
+	return ""
+}
+
+func parseExpectExpr(line string) string {
+	// Find expect( and extract first argument
+	idx := strings.Index(line, "expect(")
+	if idx == -1 {
+		return ""
+	}
+	start := idx + len("expect(")
+	depth := 1
+	for i := start; i < len(line); i++ {
+		switch line[i] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return strings.TrimSpace(line[start:i])
+			}
+		}
+	}
+	return ""
+}
+
+func expectValueString(e *expectObj) string {
+	if e.value == nil {
+		return "nil"
+	}
+	switch v := e.value.(type) {
+	case bool:
+		if v {
+			return "true"
+		}
+		return "false"
+	case float64:
+		if v == float64(int64(v)) {
+			return fmt.Sprintf("%d", int64(v))
+		}
+		return fmt.Sprintf("%g", v)
+	case string:
+		return fmt.Sprintf("%q", v)
+	case []any:
+		return "table"
+	case map[string]any:
+		return "table"
+	default:
+		return fmt.Sprintf("%T", v)
+	}
+}
+
+func expectPushValue(l *lua.State, e *expectObj) {
+	if e.value == nil {
+		l.PushNil()
+		return
+	}
+	switch v := e.value.(type) {
+	case string:
+		l.PushString(v)
+	case bool:
+		l.PushBoolean(v)
+	case float64:
+		l.PushNumber(v)
+	case int:
+		l.PushInteger(v)
+	case int64:
+		l.PushInteger(int(v))
+	default:
+		l.PushUserData(v)
+	}
+}
+
+func luaValueToString(l *lua.State, idx int) string {
+	switch l.TypeOf(idx) {
+	case lua.TypeNil:
+		return "nil"
+	case lua.TypeBoolean:
+		if l.ToBoolean(idx) {
+			return "true"
+		}
+		return "false"
+	case lua.TypeNumber:
+		n, _ := l.ToNumber(idx)
+		if n == float64(int64(n)) {
+			return fmt.Sprintf("%d", int64(n))
+		}
+		return fmt.Sprintf("%g", n)
+	case lua.TypeString:
+		s, _ := l.ToString(idx)
+		return fmt.Sprintf("%q", s)
+	case lua.TypeTable:
+		return "table"
+	case lua.TypeFunction:
+		return "function"
+	case lua.TypeUserData:
+		return fmt.Sprintf("userdata(%T)", l.ToUserData(idx))
+	case lua.TypeThread:
+		return "thread"
+	default:
+		return l.TypeOf(idx).String()
+	}
+}
+
+var expectMethods = map[string]lua.Function{
+	"is_nil": func(l *lua.State) int {
+		e := toExpect(l)
+		if e.value != nil {
+			expectFail(l, "nil", expectValueString(e))
+		}
+		return 0
+	},
+	"not_nil": func(l *lua.State) int {
+		e := toExpect(l)
+		if e.value == nil {
+			expectFail(l, "non-nil", "nil")
+		}
+		return 0
+	},
+	"is_true": func(l *lua.State) int {
+		e := toExpect(l)
+		if b, ok := e.value.(bool); !ok || !b {
+			expectFail(l, "true", expectValueString(e))
+		}
+		return 0
+	},
+	"is_false": func(l *lua.State) int {
+		e := toExpect(l)
+		if b, ok := e.value.(bool); !ok || b {
+			expectFail(l, "false", expectValueString(e))
+		}
+		return 0
+	},
+	"equals": func(l *lua.State) int {
+		e := toExpect(l)
+		expectPushValue(l, e)
+		l.PushValue(2)
+		if !l.Compare(-2, -1, lua.OpEq) {
+			actual := expectValueString(e)
+			expected := luaValueToString(l, -1)
+			l.Pop(2)
+			expectFail(l, expected, actual)
+		}
+		l.Pop(2)
+		return 0
+	},
+	"not_equals": func(l *lua.State) int {
+		e := toExpect(l)
+		expectPushValue(l, e)
+		l.PushValue(2)
+		if l.Compare(-2, -1, lua.OpEq) {
+			actual := expectValueString(e)
+			expected := luaValueToString(l, -1)
+			l.Pop(2)
+			expectFail(l, "not "+expected, actual)
+		}
+		l.Pop(2)
+		return 0
+	},
+	"is_lt": func(l *lua.State) int {
+		e := toExpect(l)
+		expectPushValue(l, e)
+		l.PushValue(2)
+		if l.Compare(-2, -1, lua.OpLT) {
+			l.Pop(2)
+			return 0
+		}
+		actual := expectValueString(e)
+		expected := luaValueToString(l, -1)
+		l.Pop(2)
+		expectFail(l, "< "+expected, actual)
+		return 0
+	},
+	"not_lt": func(l *lua.State) int {
+		e := toExpect(l)
+		expectPushValue(l, e)
+		l.PushValue(2)
+		if !l.Compare(-2, -1, lua.OpLT) {
+			l.Pop(2)
+			return 0
+		}
+		actual := expectValueString(e)
+		expected := luaValueToString(l, -1)
+		l.Pop(2)
+		expectFail(l, "not < "+expected, actual)
+		return 0
+	},
+	"is_le": func(l *lua.State) int {
+		e := toExpect(l)
+		expectPushValue(l, e)
+		l.PushValue(2)
+		if l.Compare(-2, -1, lua.OpLE) {
+			l.Pop(2)
+			return 0
+		}
+		actual := expectValueString(e)
+		expected := luaValueToString(l, -1)
+		l.Pop(2)
+		expectFail(l, "<= "+expected, actual)
+		return 0
+	},
+	"not_le": func(l *lua.State) int {
+		e := toExpect(l)
+		expectPushValue(l, e)
+		l.PushValue(2)
+		if !l.Compare(-2, -1, lua.OpLE) {
+			l.Pop(2)
+			return 0
+		}
+		actual := expectValueString(e)
+		expected := luaValueToString(l, -1)
+		l.Pop(2)
+		expectFail(l, "not <= "+expected, actual)
+		return 0
+	},
+}
+
+var expectMetatable = []lua.RegistryFunction{
+	effectual.LuaMetaIndex(nil, expectMethods),
 }
