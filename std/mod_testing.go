@@ -106,6 +106,22 @@ type testCtx struct {
 	caseName  string
 }
 
+type CtxExtEntry struct {
+	Ext    LuaTestCtxExtension
+	Params map[string]any
+}
+
+var ctxExtRegistry = make(map[*testing.T][]CtxExtEntry)
+
+func SetCtxExt(t *testing.T, entries []CtxExtEntry) {
+	ctxExtRegistry[t] = entries
+}
+
+type LuaTestCtxExtension interface {
+	Name() string
+	Build(l *lua.State, params map[string]any)
+}
+
 func toTestCtx(l *lua.State) *testCtx {
 	return lua.CheckUserData(l, 1, slugTestCtxHandle).(*testCtx)
 }
@@ -121,6 +137,17 @@ var testCtxGetters = map[string]func(*lua.State){
 			}
 		} else {
 			l.PushString(tc.t.Name())
+		}
+	},
+	"ext": func(l *lua.State) {
+		tc := toTestCtx(l)
+		l.NewTable()
+		if entries, ok := ctxExtRegistry[tc.t]; ok {
+			for _, entry := range entries {
+				l.PushString(entry.Ext.Name())
+				entry.Ext.Build(l, entry.Params)
+				l.RawSet(-3)
+			}
 		}
 	},
 }
