@@ -625,62 +625,6 @@ var expectMethods = map[string]lua.Function{
 		l.Pop(2)
 		return 0
 	},
-	"is_lt": func(l *lua.State) int {
-		e := toExpect(l)
-		expectPushValue(l, e)
-		l.PushValue(2)
-		if l.Compare(-2, -1, lua.OpLT) {
-			l.Pop(2)
-			return 0
-		}
-		actual := expectValueString(e)
-		expected := luaValueToString(l, -1)
-		l.Pop(2)
-		expectFail(l, "< "+expected, actual)
-		return 0
-	},
-	"not_lt": func(l *lua.State) int {
-		e := toExpect(l)
-		expectPushValue(l, e)
-		l.PushValue(2)
-		if !l.Compare(-2, -1, lua.OpLT) {
-			l.Pop(2)
-			return 0
-		}
-		actual := expectValueString(e)
-		expected := luaValueToString(l, -1)
-		l.Pop(2)
-		expectFail(l, "not < "+expected, actual)
-		return 0
-	},
-	"is_le": func(l *lua.State) int {
-		e := toExpect(l)
-		expectPushValue(l, e)
-		l.PushValue(2)
-		if l.Compare(-2, -1, lua.OpLE) {
-			l.Pop(2)
-			return 0
-		}
-		actual := expectValueString(e)
-		expected := luaValueToString(l, -1)
-		l.Pop(2)
-		expectFail(l, "<= "+expected, actual)
-		return 0
-	},
-	"not_le": func(l *lua.State) int {
-		e := toExpect(l)
-		expectPushValue(l, e)
-		l.PushValue(2)
-		if !l.Compare(-2, -1, lua.OpLE) {
-			l.Pop(2)
-			return 0
-		}
-		actual := expectValueString(e)
-		expected := luaValueToString(l, -1)
-		l.Pop(2)
-		expectFail(l, "not <= "+expected, actual)
-		return 0
-	},
 }
 
 var expectMetatable = []lua.RegistryFunction{

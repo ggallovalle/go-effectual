@@ -136,30 +136,6 @@ func Test_LibGoTesting_Expect_Pass(t *testing.T) {
 		err := lua.DoString(l, `ctx:expect(1):not_equals(2)`)
 		assert.NoError(t, err)
 	})
-
-	t.Run("is_lt passes when less", func(t *testing.T) {
-		l := setupTestingCtx(t)
-		err := lua.DoString(l, `ctx:expect(1):is_lt(2)`)
-		assert.NoError(t, err)
-	})
-
-	t.Run("not_lt passes when not less", func(t *testing.T) {
-		l := setupTestingCtx(t)
-		err := lua.DoString(l, `ctx:expect(2):not_lt(1)`)
-		assert.NoError(t, err)
-	})
-
-	t.Run("is_le passes when equal", func(t *testing.T) {
-		l := setupTestingCtx(t)
-		err := lua.DoString(l, `ctx:expect(1):is_le(1)`)
-		assert.NoError(t, err)
-	})
-
-	t.Run("not_le passes when greater", func(t *testing.T) {
-		l := setupTestingCtx(t)
-		err := lua.DoString(l, `ctx:expect(2):not_le(1)`)
-		assert.NoError(t, err)
-	})
 }
 
 func Test_LibGoTesting_Expect_Fail(t *testing.T) {
@@ -208,38 +184,6 @@ func Test_LibGoTesting_Expect_Fail(t *testing.T) {
 		err := lua.DoString(l, `ctx:expect(1):not_equals(1)`)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "expected not 1")
-		assert.Contains(t, err.Error(), "actual 1")
-	})
-
-	t.Run("is_lt fails when not less", func(t *testing.T) {
-		l := setupTestingCtx(t)
-		err := lua.DoString(l, `ctx:expect(2):is_lt(1)`)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "expected < 1")
-		assert.Contains(t, err.Error(), "actual 2")
-	})
-
-	t.Run("not_lt fails when less", func(t *testing.T) {
-		l := setupTestingCtx(t)
-		err := lua.DoString(l, `ctx:expect(1):not_lt(2)`)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "expected not < 2")
-		assert.Contains(t, err.Error(), "actual 1")
-	})
-
-	t.Run("is_le fails when greater", func(t *testing.T) {
-		l := setupTestingCtx(t)
-		err := lua.DoString(l, `ctx:expect(2):is_le(1)`)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "expected <= 1")
-		assert.Contains(t, err.Error(), "actual 2")
-	})
-
-	t.Run("not_le fails when less or equal", func(t *testing.T) {
-		l := setupTestingCtx(t)
-		err := lua.DoString(l, `ctx:expect(1):not_le(1)`)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "expected not <= 1")
 		assert.Contains(t, err.Error(), "actual 1")
 	})
 
