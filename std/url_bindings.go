@@ -126,7 +126,9 @@ var urlMetatable = []lua.RegistryFunction{
 		return 1
 	}},
 	{Name: "__div", Function: luaUrlDiv},
-	effectual.LuaMetaIndex(urlGetters, urlMethods),
+	{Name: "add_query", Function: luaUrlAddQuery},
+	{Name: "remove_query", Function: luaUrlRemoveQuery},
+	effectual.LuaMetaIndex(urlGetters, nil),
 }
 
 func urlLibrary() []lua.RegistryFunction {

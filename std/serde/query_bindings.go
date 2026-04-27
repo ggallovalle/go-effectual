@@ -3,7 +3,10 @@
 package serde
 
 import (
+	"github.com/ggallovalle/go-effectual"
 	"github.com/speedata/go-lua"
+	"strings"
+	"text/template"
 )
 
 const QUERY_HANDLE = "go/std/serde/query/Query*"
@@ -146,4 +149,168 @@ var queryMethods = map[string]lua.Function{
 
 var queryGetters = map[string]func(*lua.State){
 	"size": luaQuerySize,
+}
+
+var queryMetatable = []lua.RegistryFunction{
+	{Name: "__tostring", Function: QueryToString},
+	{Name: "__pairs", Function: QueryPairs},
+	{Name: "from_raw", Function: luaQueryFromRaw},
+	{Name: "has", Function: luaQueryHas},
+	{Name: "get", Function: luaQueryGet},
+	{Name: "get_all", Function: luaQueryGetAll},
+	{Name: "set", Function: luaQuerySet},
+	{Name: "append", Function: luaQueryAppend},
+	{Name: "delete", Function: luaQueryDelete},
+	{Name: "sort", Function: luaQuerySort},
+	{Name: "to_string", Function: luaQueryToString},
+	{Name: "keys", Function: luaQueryKeys},
+	{Name: "values", Function: luaQueryValues},
+	{Name: "entries", Function: luaQueryEntries},
+	effectual.LuaMetaIndex(queryGetters, nil),
+}
+
+func queryLibrary() []lua.RegistryFunction {
+	return []lua.RegistryFunction{
+		{Name: "new", Function: queryNew},
+		{Name: "deserialize", Function: queryDeserialize},
+		{Name: "serialize", Function: querySerialize},
+	}
+}
+
+type ModQuery struct {
+	name string
+}
+
+func (lib *ModQuery) Name() string {
+	return lib.name
+}
+
+func (lib *ModQuery) Annotations() string {
+	data := map[string]string{
+		"module": lib.name,
+		"Query":  lib.name + ".Query",
+	}
+	var buf strings.Builder
+	if err := QueryAnnotationsTmpl.Execute(&buf, data); err != nil {
+		return ""
+	}
+	return buf.String()
+}
+
+func (lib *ModQuery) Open(l *lua.State) int {
+	lua.NewLibrary(l, queryLibrary())
+
+	lua.NewMetaTable(l, QUERY_HANDLE)
+	l.PushValue(-1)
+	l.SetField(-2, "__index")
+	lua.SetFunctions(l, queryMetatable, 0)
+	l.Pop(1)
+
+	return 1
+}
+
+func (lib *ModQuery) OpenLib(l *lua.State) {
+	lua.Require(l, lib.name, lib.Open, false)
+	l.Pop(1)
+}
+
+func (lib *ModQuery) Require(l *lua.State) {
+	l.Global("require")
+	l.PushString(lib.Name())
+	l.Call(1, 1)
+}
+
+func MakeModQuery() effectual.LuaModDefinition {
+	return &ModQuery{name: "std.serde.query"}
+}
+
+var QueryAnnotationsTmpl = template.Must(template.New("Query").Parse(`---@meta {{.module}}
+
+---@class (exact) {{.Query}} : userdata
+local Query = {}
+
+---@param raw string
+function Query:from_raw(raw) end
+
+---@param 
+---@return integer
+function Query:size() end
+
+---@param key string
+---@return boolean
+function Query:has(key) end
+
+---@param key string
+---@return string|nil
+function Query:get(key) end
+
+---@param key string
+---@return string[]
+function Query:get_all(key) end
+
+---@param key string
+value string
+function Query:set(key, value) end
+
+---@param key string
+value string
+function Query:append(key, value) end
+
+---@param key string
+function Query:delete(key) end
+
+---@param 
+function Query:sort() end
+
+---@param 
+---@return string
+function Query:to_string() end
+
+---@param 
+---@return string[]
+function Query:keys() end
+
+---@param 
+---@return string[]
+function Query:values() end
+
+---@param 
+---@return {[1]: string, [2]: string}[]
+function Query:entries() end
+
+local q = {}
+
+---@param 
+---@return {{.Query}}
+function q.new() end
+
+---@param raw string
+---@return {{.Query}}
+function q.deserialize(raw) end
+
+---@param q {{.Query}}
+---@return string
+function q.serialize(q) end
+
+return q
+`))
+
+func queryNew(l *lua.State) int {
+	q := NewQuery()
+	QueryToLua(l, q)
+	return 1
+}
+func queryDeserialize(l *lua.State) int {
+	raw, _ := l.ToString(1)
+	q := NewQuery()
+	if raw != "" {
+		q.FromRaw(raw)
+	}
+	QueryToLua(l, q)
+	return 1
+}
+func querySerialize(l *lua.State) int {
+	q := toQuery(l, 1)
+	l.PushString(q.ToString())
+	return 1
 }

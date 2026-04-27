@@ -13,6 +13,13 @@ type MethodComment struct {
 	Module     string
 	Metamethod string
 	ForceMethod bool
+	Raw        bool
+}
+
+type FuncComment struct {
+	ModuleFn   string
+	Metamethod string
+	Raw        bool
 }
 
 var validAnnotationKeys = map[string]bool{
@@ -23,6 +30,10 @@ var validAnnotationKeys = map[string]bool{
 	"module":       true,
 	"skip-field":   true,
 	"nil-map-field": true,
+	"class":        true,
+	"module-fn":    true,
+	"metamethod":   true,
+	"raw":          true,
 }
 
 func ParseSource(sourceFile string, typeName string) (*TypeInfo, *GenConfigAnnotation, error) {
@@ -38,6 +49,8 @@ func ParseSource(sourceFile string, typeName string) (*TypeInfo, *GenConfigAnnot
 	}
 
 	annotations := extractTypeAnnotations(node, typeName)
+
+	info.Class = annotations.Class
 
 	// Extract package-level module annotation (only if not already set from type annotation)
 	if annotations.Module == "" {
@@ -90,7 +103,7 @@ func ParseSource(sourceFile string, typeName string) (*TypeInfo, *GenConfigAnnot
 		})
 	}
 
-	// Parse module-level functions (//lua:module <name>)
+	// Parse module-level functions (//lua:module <name> and //lua: module-fn <name>)
 	for _, decl := range node.Decls {
 		funcDecl, ok := decl.(*ast.FuncDecl)
 		if !ok || funcDecl.Recv != nil {
@@ -100,25 +113,64 @@ func ParseSource(sourceFile string, typeName string) (*TypeInfo, *GenConfigAnnot
 			continue
 		}
 		text := funcDecl.Doc.Text()
+
+		hasModuleFn := false
+		hasMetamethod := false
+		hasRaw := false
+		luaName := ""
+		metamethodName := ""
+
 		for _, line := range strings.Split(text, "\n") {
 			line = strings.TrimSpace(line)
 			if strings.HasPrefix(line, "//lua:module ") {
-				luaName := strings.TrimSpace(strings.TrimPrefix(line, "//lua:module "))
-				if luaName != "" {
-					info.ModuleFuncs = append(info.ModuleFuncs, ModuleFuncInfo{
-						Name:    funcDecl.Name.Name,
-						LuaName: luaName,
-					})
-				}
+				luaName = strings.TrimSpace(strings.TrimPrefix(line, "//lua:module "))
+				hasModuleFn = true
 			} else if strings.HasPrefix(line, "lua:module ") {
-				luaName := strings.TrimSpace(strings.TrimPrefix(line, "lua:module "))
-				if luaName != "" {
-					info.ModuleFuncs = append(info.ModuleFuncs, ModuleFuncInfo{
-						Name:    funcDecl.Name.Name,
-						LuaName: luaName,
-					})
-				}
+				luaName = strings.TrimSpace(strings.TrimPrefix(line, "lua:module "))
+				hasModuleFn = true
+			} else if strings.HasPrefix(line, "//lua: module-fn ") {
+				luaName = strings.TrimSpace(strings.TrimPrefix(line, "//lua: module-fn "))
+				hasModuleFn = true
+			} else if strings.HasPrefix(line, "//lua:module-fn ") {
+				luaName = strings.TrimSpace(strings.TrimPrefix(line, "//lua:module-fn "))
+				hasModuleFn = true
+			} else if strings.HasPrefix(line, "lua: module-fn ") {
+				luaName = strings.TrimSpace(strings.TrimPrefix(line, "lua: module-fn "))
+				hasModuleFn = true
+			} else if strings.HasPrefix(line, "lua:module-fn ") {
+				luaName = strings.TrimSpace(strings.TrimPrefix(line, "lua:module-fn "))
+				hasModuleFn = true
+			} else if strings.HasPrefix(line, "//lua: metamethod ") {
+				metamethodName = strings.TrimSpace(strings.TrimPrefix(line, "//lua: metamethod "))
+				hasMetamethod = true
+			} else if strings.HasPrefix(line, "//lua:metamethod ") {
+				metamethodName = strings.TrimSpace(strings.TrimPrefix(line, "//lua:metamethod "))
+				hasMetamethod = true
+			} else if strings.HasPrefix(line, "lua: metamethod ") {
+				metamethodName = strings.TrimSpace(strings.TrimPrefix(line, "lua: metamethod "))
+				hasMetamethod = true
+			} else if strings.HasPrefix(line, "lua:metamethod ") {
+				metamethodName = strings.TrimSpace(strings.TrimPrefix(line, "lua:metamethod "))
+				hasMetamethod = true
+			} else if line == "//lua: raw" || line == "//lua:raw" || line == "lua: raw" || line == "lua:raw" {
+				hasRaw = true
 			}
+		}
+
+		if hasModuleFn && luaName != "" {
+			info.ModuleFuncs = append(info.ModuleFuncs, ModuleFuncInfo{
+				Name:    funcDecl.Name.Name,
+				LuaName: luaName,
+				Raw:     hasRaw,
+			})
+		}
+
+		if hasMetamethod && metamethodName != "" {
+			info.Metamethods = append(info.Metamethods, MetamethodInfo{
+				Name:    funcDecl.Name.Name,
+				LuaName: metamethodName,
+				Raw:     hasRaw,
+			})
 		}
 	}
 
@@ -149,6 +201,7 @@ func extractTypeAnnotations(node *ast.File, typeName string) *GenConfigAnnotatio
 
 			hasLuaBindgenMarker := false
 			hasBuildTag := false
+			hasLuaAnnotation := false
 
 			for _, line := range strings.Split(text, "\n") {
 				line = strings.TrimSpace(line)
@@ -158,17 +211,68 @@ func extractTypeAnnotations(node *ast.File, typeName string) *GenConfigAnnotatio
 				if strings.Contains(line, "//go:build") && strings.Contains(line, "lua_bindgen") {
 					hasBuildTag = true
 				}
+				if strings.HasPrefix(line, "lua: module") || strings.HasPrefix(line, "lua:module") || strings.HasPrefix(line, "lua: class") || strings.HasPrefix(line, "lua:class") {
+					hasLuaAnnotation = true
+				}
 			}
 
-			if !hasLuaBindgenMarker && !hasBuildTag {
+			if !hasLuaBindgenMarker && !hasBuildTag && !hasLuaAnnotation {
 				return ann
 			}
 
 			for _, line := range strings.Split(text, "\n") {
 				line = strings.TrimSpace(line)
-				if !strings.HasPrefix(line, "+lua-bindgen.sh") {
+				if !strings.HasPrefix(line, "+lua-bindgen.sh") && !strings.HasPrefix(line, "lua:") {
 					continue
 				}
+
+				if strings.HasPrefix(line, "lua: ") || strings.HasPrefix(line, "lua:") {
+					// Parse inline lua: annotations
+					line = strings.TrimPrefix(line, "lua: ")
+					line = strings.TrimPrefix(line, "lua:")
+					line = strings.TrimSpace(line)
+
+					// Handle key=value format
+					if strings.Contains(line, "=") {
+						pairs := parseAnnotationLine(line)
+						for key, value := range pairs {
+							if !validAnnotationKeys[key] {
+								continue
+							}
+							switch key {
+							case "module":
+								ann.Module = value
+							case "class":
+								ann.Class = value
+							case "skip-fields":
+								ann.SkipFields = parseCommaList(value)
+							case "nil-map":
+								ann.NilMap = parseCommaList(value)
+							case "force-method":
+								ann.ForceMethod = parseCommaList(value)
+							case "skip":
+								ann.Skip = parseCommaList(value)
+							}
+						}
+					} else {
+						// Handle key value format (e.g., "lua: class Query")
+						parts := strings.SplitN(line, " ", 2)
+						if len(parts) == 2 {
+							key := strings.TrimSpace(parts[0])
+							value := strings.TrimSpace(parts[1])
+							if validAnnotationKeys[key] {
+								switch key {
+								case "module":
+									ann.Module = value
+								case "class":
+									ann.Class = value
+								}
+							}
+						}
+					}
+					continue
+				}
+
 				line = strings.TrimPrefix(line, "+lua-bindgen.sh")
 				line = strings.TrimSpace(line)
 
@@ -180,6 +284,8 @@ func extractTypeAnnotations(node *ast.File, typeName string) *GenConfigAnnotatio
 					switch key {
 					case "module":
 						ann.Module = value
+					case "class":
+						ann.Class = value
 					case "skip-fields":
 						ann.SkipFields = parseCommaList(value)
 					case "nil-map":
@@ -209,7 +315,7 @@ func extractAnnotationText(node *ast.File, typeSpec *ast.TypeSpec, genDecl *ast.
 
 	if text == "" {
 		for _, c := range node.Comments {
-			if strings.Contains(c.Text(), "+lua-bindgen.sh") {
+			if strings.Contains(c.Text(), "+lua-bindgen.sh") || strings.Contains(c.Text(), "lua: module") || strings.Contains(c.Text(), "lua: class") {
 				text = c.Text()
 				break
 			}
@@ -229,6 +335,12 @@ func extractPackageModule(node *ast.File) string {
 			}
 			if strings.HasPrefix(line, "lua:module ") {
 				return strings.TrimSpace(strings.TrimPrefix(line, "lua:module "))
+			}
+			if strings.HasPrefix(line, "//lua: module ") {
+				return strings.TrimSpace(strings.TrimPrefix(line, "//lua: module "))
+			}
+			if strings.HasPrefix(line, "lua: module ") {
+				return strings.TrimSpace(strings.TrimPrefix(line, "lua: module "))
 			}
 		}
 	}
@@ -360,13 +472,18 @@ func extractMethodComments(node *ast.File, typeName string) map[string]MethodCom
 			if line == "//lua:force-method" || line == "//lua: force-method" || line == "lua:force-method" || line == "lua: force-method" {
 				mc.ForceMethod = true
 			}
+			if line == "//lua: raw" || line == "//lua:raw" || line == "lua: raw" || line == "lua:raw" {
+				mc.Raw = true
+			}
 			if strings.HasPrefix(line, "//lua:metamethod ") {
 				mc.Metamethod = strings.TrimSpace(strings.TrimPrefix(line, "//lua:metamethod "))
+			} else if strings.HasPrefix(line, "//lua: metamethod ") {
+				mc.Metamethod = strings.TrimSpace(strings.TrimPrefix(line, "//lua: metamethod "))
 			} else if strings.HasPrefix(line, "lua:metamethod ") {
 				mc.Metamethod = strings.TrimSpace(strings.TrimPrefix(line, "lua:metamethod "))
 			}
 		}
-		if mc.Skip || mc.NilMap || mc.ForceMethod || mc.Metamethod != "" {
+		if mc.Skip || mc.NilMap || mc.ForceMethod || mc.Metamethod != "" || mc.Raw {
 			comments[funcDecl.Name.Name] = mc
 		}
 	}

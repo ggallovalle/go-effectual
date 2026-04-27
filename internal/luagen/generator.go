@@ -65,6 +65,20 @@ func Generate(info *TypeInfo, cfg *GenConfig) string {
 	b.WriteString(genLibrary(info))
 	b.WriteString("\n")
 
+	// Module-level code for class-annotated types
+	if info.Class != "" {
+		b.WriteString(genModuleStruct(info, cfg))
+		b.WriteString("\n")
+		b.WriteString(genMakeModFunc(info, cfg))
+		b.WriteString("\n")
+		b.WriteString(genAnnotationsTemplate(info, cfg))
+		b.WriteString("\n")
+		b.WriteString(genModuleFuncWrappers(info))
+		b.WriteString("\n")
+		b.WriteString(genRawMetamethodRegistration(info))
+		b.WriteString("\n")
+	}
+
 	return b.String()
 }
 
@@ -72,8 +86,13 @@ func collectImports(info *TypeInfo, cfg *GenConfig) []string {
 	imports := make(map[string]string)
 	imports["\"github.com/speedata/go-lua\""] = ""
 
-	if len(info.Metamethods) > 0 {
+	if len(info.Metamethods) > 0 || info.Class != "" {
 		imports["\"github.com/ggallovalle/go-effectual\""] = ""
+	}
+
+	if info.Class != "" {
+		imports["\"text/template\""] = ""
+		imports["\"strings\""] = ""
 	}
 
 	for _, m := range info.Methods {
@@ -482,18 +501,48 @@ func genMetatable(info *TypeInfo) string {
 
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("var %sMetatable = []lua.RegistryFunction{\n", vn))
-	b.WriteString("\t{Name: \"__tostring\", Function: func(l *lua.State) int {\n")
-	b.WriteString(fmt.Sprintf("\t\t%s := to%s(l, 1)\n", vn, info.Name))
-	b.WriteString(fmt.Sprintf("\t\tl.PushString(%s.%s)\n", vn, stringMethod))
-	b.WriteString("\t\treturn 1\n")
-	b.WriteString("\t}},\n")
+
+	// Check if __tostring is a raw metamethod
+	hasRawTostring := false
+	for _, mm := range info.Metamethods {
+		if mm.LuaName == "__tostring" && mm.Raw {
+			hasRawTostring = true
+			break
+		}
+	}
+
+	if !hasRawTostring {
+		b.WriteString("\t{Name: \"__tostring\", Function: func(l *lua.State) int {\n")
+		b.WriteString(fmt.Sprintf("\t\t%s := to%s(l, 1)\n", vn, info.Name))
+		b.WriteString(fmt.Sprintf("\t\tl.PushString(%s.%s)\n", vn, stringMethod))
+		b.WriteString("\t\treturn 1\n")
+		b.WriteString("\t}},\n")
+	}
 
 	// Metamethods
 	for _, mm := range info.Metamethods {
-		b.WriteString(fmt.Sprintf("\t{Name: \"__%s\", Function: lua%s%s},\n", mm.LuaName, info.Name, mm.Name))
+		luaName := mm.LuaName
+		// Strip leading __ since we add it below
+		luaName = strings.TrimPrefix(luaName, "__")
+		if mm.Raw {
+			b.WriteString(fmt.Sprintf("\t{Name: \"__%s\", Function: %s},\n", luaName, mm.Name))
+		} else {
+			b.WriteString(fmt.Sprintf("\t{Name: \"__%s\", Function: lua%s%s},\n", luaName, info.Name, mm.Name))
+		}
 	}
 
-	b.WriteString(fmt.Sprintf("\teffectual.LuaMetaIndex(%sGetters, %sMethods),\n", vn, vn))
+	// Methods inlined
+	for _, m := range info.Methods {
+		if m.IsSkipped || m.IsGetter {
+			continue
+		}
+		if isMetamethod(info, m.Name) {
+			continue
+		}
+		b.WriteString(fmt.Sprintf("\t{Name: \"%s\", Function: lua%s%s},\n", ToSnake(m.Name), info.Name, m.Name))
+	}
+
+	b.WriteString(fmt.Sprintf("\teffectual.LuaMetaIndex(%sGetters, nil),\n", vn))
 	b.WriteString("}\n")
 	return b.String()
 }
@@ -508,7 +557,8 @@ func genLibrary(info *TypeInfo) string {
 	b.WriteString(fmt.Sprintf("func %sLibrary() []lua.RegistryFunction {\n", vn))
 	b.WriteString("\treturn []lua.RegistryFunction{\n")
 	for _, mf := range info.ModuleFuncs {
-		b.WriteString(fmt.Sprintf("\t\t{Name: \"%s\", Function: %s},\n", mf.LuaName, mf.Name))
+		wrapperName := vn + capitalize(mf.LuaName)
+		b.WriteString(fmt.Sprintf("\t\t{Name: \"%s\", Function: %s},\n", mf.LuaName, wrapperName))
 	}
 	b.WriteString("\t}\n")
 	b.WriteString("}\n")
@@ -524,4 +574,287 @@ func indent(s string, level int) string {
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+func genModuleStruct(info *TypeInfo, cfg *GenConfig) string {
+	modName := "Mod" + info.Name
+	vn := info.VarName()
+	return fmt.Sprintf(`type %s struct {
+	name string
+}
+
+func (lib *%s) Name() string {
+	return lib.name
+}
+
+func (lib *%s) Annotations() string {
+	data := map[string]string{
+		"module": lib.name,
+		"%s":  lib.name + ".%s",
+	}
+	var buf strings.Builder
+	if err := %sAnnotationsTmpl.Execute(&buf, data); err != nil {
+		return ""
+	}
+	return buf.String()
+}
+
+func (lib *%s) Open(l *lua.State) int {
+	lua.NewLibrary(l, %sLibrary())
+
+	lua.NewMetaTable(l, %s_HANDLE)
+	l.PushValue(-1)
+	l.SetField(-2, "__index")
+	lua.SetFunctions(l, %sMetatable, 0)
+	l.Pop(1)
+
+	return 1
+}
+
+func (lib *%s) OpenLib(l *lua.State) {
+	lua.Require(l, lib.name, lib.Open, false)
+	l.Pop(1)
+}
+
+func (lib *%s) Require(l *lua.State) {
+	l.Global("require")
+	l.PushString(lib.Name())
+	l.Call(1, 1)
+}
+`, modName, modName, modName, info.Name, info.Name, info.Name, modName, vn, strings.ToUpper(info.Name), vn, modName, modName)
+}
+
+func genMakeModFunc(info *TypeInfo, cfg *GenConfig) string {
+	modName := "Mod" + info.Name
+	return fmt.Sprintf(`func Make%s() effectual.LuaModDefinition {
+	return &%s{name: "%s"}
+}`, modName, modName, cfg.Module)
+}
+
+func genAnnotationsTemplate(info *TypeInfo, cfg *GenConfig) string {
+	tmplName := info.Name + "AnnotationsTmpl"
+
+	// Build the template string
+	var tmpl strings.Builder
+	tmpl.WriteString(fmt.Sprintf("var %s = template.Must(template.New(\"%s\").Parse(`", tmplName, info.Name))
+	tmpl.WriteString("---@meta {{.module}}\n\n")
+	tmpl.WriteString(fmt.Sprintf("---@class (exact) {{.%s}} : userdata\n", info.Name))
+
+	// Add fields
+	for _, f := range info.Fields {
+		if cfg.IsFieldSkipped(f.Name) || f.IsSkipped {
+			continue
+		}
+		luaType := goTypeToLuaType(f.Type)
+		if luaType != "" {
+			tmpl.WriteString(fmt.Sprintf("---@field %s %s\n", ToSnake(f.Name), luaType))
+		}
+	}
+
+	tmpl.WriteString(fmt.Sprintf("local %s = {}\n\n", info.Name))
+
+	// Add methods
+	for _, m := range info.Methods {
+		if m.IsSkipped {
+			continue
+		}
+		if isMetamethod(info, m.Name) {
+			continue
+		}
+		luaMethodName := ToSnake(m.Name)
+		params := luaMethodParams(m)
+		returnType := luaMethodReturn(m)
+		if returnType != "" {
+			tmpl.WriteString(fmt.Sprintf("---@param %s\n", params))
+			tmpl.WriteString(fmt.Sprintf("---@return %s\n", returnType))
+			tmpl.WriteString(fmt.Sprintf("function %s:%s(%s) end\n\n", info.Name, luaMethodName, luaMethodParamNames(m)))
+		} else {
+			tmpl.WriteString(fmt.Sprintf("---@param %s\n", params))
+			tmpl.WriteString(fmt.Sprintf("function %s:%s(%s) end\n\n", info.Name, luaMethodName, luaMethodParamNames(m)))
+		}
+	}
+
+	// Add module functions
+	tmpl.WriteString(fmt.Sprintf("local %s = {}\n\n", strings.ToLower(info.Name[:1])))
+	for _, mf := range info.ModuleFuncs {
+		params := luaModuleFnParams(mf, info)
+		returnType := luaModuleFnReturn(mf, info)
+		if returnType != "" {
+			tmpl.WriteString(fmt.Sprintf("---@param %s\n", params))
+			tmpl.WriteString(fmt.Sprintf("---@return %s\n", returnType))
+		} else {
+			tmpl.WriteString(fmt.Sprintf("---@param %s\n", params))
+		}
+		tmpl.WriteString(fmt.Sprintf("function %s.%s(%s) end\n\n", strings.ToLower(info.Name[:1]), mf.LuaName, luaModuleFnParamNames(mf, info)))
+	}
+
+	tmpl.WriteString(fmt.Sprintf("return %s\n", strings.ToLower(info.Name[:1])))
+	tmpl.WriteString("`))")
+
+	return tmpl.String()
+}
+
+func genModuleFuncWrappers(info *TypeInfo) string {
+	var b strings.Builder
+
+	for _, mf := range info.ModuleFuncs {
+		if mf.Raw {
+			continue
+		}
+		wrapperName := info.VarName() + capitalize(mf.LuaName)
+		b.WriteString(genModuleFuncWrapper(info, mf, wrapperName))
+		b.WriteString("\n")
+	}
+
+	return b.String()
+}
+
+func genModuleFuncWrapper(info *TypeInfo, mf ModuleFuncInfo, wrapperName string) string {
+	// Find the actual function to determine parameters
+	// For now, generate a generic wrapper pattern
+	switch mf.LuaName {
+	case "new":
+		return fmt.Sprintf(`func %s(l *lua.State) int {
+	q := %s()
+	%sToLua(l, q)
+	return 1
+}`, wrapperName, mf.Name, info.Name)
+	case "deserialize":
+		return fmt.Sprintf(`func %s(l *lua.State) int {
+	raw, _ := l.ToString(1)
+	q := NewQuery()
+	if raw != "" {
+		q.FromRaw(raw)
+	}
+	%sToLua(l, q)
+	return 1
+}`, wrapperName, info.Name)
+	case "serialize":
+		return fmt.Sprintf(`func %s(l *lua.State) int {
+	q := to%s(l, 1)
+	l.PushString(q.ToString())
+	return 1
+}`, wrapperName, info.Name)
+	default:
+		return fmt.Sprintf(`func %s(l *lua.State) int {
+	// TODO: manual impl for %s
+	return 0
+}`, wrapperName, mf.Name)
+	}
+}
+
+func genRawMetamethodRegistration(info *TypeInfo) string {
+	// Raw metamethods are already registered in genMetatable
+	// This function is a placeholder for any additional raw handling
+	return ""
+}
+
+func goTypeToLuaType(goType string) string {
+	switch goType {
+	case "bool":
+		return "boolean"
+	case "int", "int64":
+		return "integer"
+	case "string":
+		return "string"
+	case "*string":
+		return "string|nil"
+	case "*int", "*int64":
+		return "integer|nil"
+	case "[]string":
+		return "string[]"
+	case "[][2]string":
+		return "{[1]: string, [2]: string}[]"
+	}
+	if strings.HasPrefix(goType, "*") {
+		return goType[1:] + "|nil"
+	}
+	return ""
+}
+
+func luaMethodParams(m MethodInfo) string {
+	var params []string
+	for _, p := range m.Params {
+		luaType := goTypeToLuaType(p.Type)
+		if luaType == "" {
+			luaType = "any"
+		}
+		params = append(params, fmt.Sprintf("%s %s", p.Name, luaType))
+	}
+	if len(params) == 0 {
+		return ""
+	}
+	return strings.Join(params, "\n")
+}
+
+func luaMethodReturn(m MethodInfo) string {
+	switch m.ReturnKind {
+	case ReturnBool:
+		return "boolean"
+	case ReturnInt, ReturnInt64:
+		return "integer"
+	case ReturnString:
+		if m.IsNilMap {
+			return "string|nil"
+		}
+		return "string"
+	case ReturnStringSlice:
+		return "string[]"
+	case ReturnPointer:
+		return m.PtrType + "|nil"
+	case ReturnPointerSlice:
+		return m.PtrType + "[]"
+	case ReturnTupleSlice:
+		return "{[1]: string, [2]: string}[]"
+	}
+	return ""
+}
+
+func luaMethodParamNames(m MethodInfo) string {
+	var names []string
+	for _, p := range m.Params {
+		names = append(names, p.Name)
+	}
+	return strings.Join(names, ", ")
+}
+
+func luaModuleFnParams(mf ModuleFuncInfo, info *TypeInfo) string {
+	switch mf.LuaName {
+	case "new":
+		return ""
+	case "deserialize":
+		return "raw string"
+	case "serialize":
+		return fmt.Sprintf("q {{.%s}}", info.Name)
+	}
+	return ""
+}
+
+func luaModuleFnReturn(mf ModuleFuncInfo, info *TypeInfo) string {
+	switch mf.LuaName {
+	case "new", "deserialize":
+		return fmt.Sprintf("{{.%s}}", info.Name)
+	case "serialize":
+		return "string"
+	}
+	return ""
+}
+
+func luaModuleFnParamNames(mf ModuleFuncInfo, info *TypeInfo) string {
+	switch mf.LuaName {
+	case "new":
+		return ""
+	case "deserialize":
+		return "raw"
+	case "serialize":
+		return "q"
+	}
+	return ""
+}
+
+func capitalize(s string) string {
+	if len(s) == 0 {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }

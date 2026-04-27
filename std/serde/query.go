@@ -4,16 +4,65 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+
+	"github.com/speedata/go-lua"
 )
 
-// lua:module std.serde.query
+//lua: module std.serde.query
+//lua: class Query
 
 type Query struct {
 	params url.Values //lua: skip-field
 }
 
+//lua: module-fn new
 func NewQuery() *Query {
 	return &Query{params: url.Values{}}
+}
+
+//lua: module-fn deserialize
+func Deserialize(raw string) *Query {
+	q := NewQuery()
+	if raw != "" {
+		q.FromRaw(raw)
+	}
+	return q
+}
+
+//lua: module-fn serialize
+func Serialize(q *Query) string {
+	return q.ToString()
+}
+
+//lua: metamethod __tostring
+//lua: raw
+func QueryToString(l *lua.State) int {
+	q := toQuery(l, 1)
+	l.PushString(q.ToString())
+	return 1
+}
+
+//lua: metamethod __pairs
+//lua: raw
+func QueryPairs(l *lua.State) int {
+	q := toQuery(l, 1)
+	q.Sort()
+	l.PushGoFunction(func(l *lua.State) int {
+		idx, _ := l.ToInteger(2)
+		q := toQuery(l, 1)
+		keys := q.Keys()
+		if idx < len(keys) {
+			k := keys[idx]
+			l.PushInteger(idx + 1)
+			l.PushString(k)
+			l.PushString(q.Get(k))
+			return 3
+		}
+		return 0
+	})
+	l.PushValue(1)
+	l.PushInteger(0)
+	return 3
 }
 
 func (q *Query) FromRaw(raw string) {

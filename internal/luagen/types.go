@@ -16,6 +16,7 @@ type GenConfig struct {
 
 type GenConfigAnnotation struct {
 	Module     string
+	Class      string
 	Skip       map[string]bool
 	NilMap     map[string]bool
 	ForceMethod map[string]bool
@@ -23,7 +24,7 @@ type GenConfigAnnotation struct {
 }
 
 func (a *GenConfigAnnotation) IsEmpty() bool {
-	return a.Module == "" && len(a.Skip) == 0 && len(a.NilMap) == 0 && len(a.ForceMethod) == 0 && len(a.SkipFields) == 0
+	return a.Module == "" && a.Class == "" && len(a.Skip) == 0 && len(a.NilMap) == 0 && len(a.ForceMethod) == 0 && len(a.SkipFields) == 0
 }
 
 type ParamInfo struct {
@@ -67,16 +68,19 @@ type FieldInfo struct {
 type ModuleFuncInfo struct {
 	Name     string
 	LuaName  string
+	Raw      bool
 }
 
 type MetamethodInfo struct {
 	Name     string
 	LuaName  string
+	Raw      bool
 }
 
 type TypeInfo struct {
 	Package    string
 	Name       string
+	Class      string
 	Methods    []MethodInfo
 	Fields     []FieldInfo
 	ModuleFuncs []ModuleFuncInfo

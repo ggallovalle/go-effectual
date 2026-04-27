@@ -31,7 +31,7 @@ func (h *allLevelHandler) WithGroup(string) slog.Handler      { return h }
 func Test_LibGoLogSlug_Levels(t *testing.T) {
 	l := lua.NewState()
 	lua.OpenLibraries(l)
-	api := effectual.LuaModOpen(l, sut.MakeModSlog())
+	api := effectual.LuaModOpenWithApi(l, sut.MakeModSlog())
 
 	for _, tc := range []struct {
 		name  string
@@ -59,7 +59,7 @@ func Test_LibGoLogSlug_Levels(t *testing.T) {
 func Test_LibGoLogSlug_Default(t *testing.T) {
 	l := lua.NewState()
 	lua.OpenLibraries(l)
-	api := effectual.LuaModOpen(l, sut.MakeModSlog())
+	api := effectual.LuaModOpenWithApi(l, sut.MakeModSlog())
 
 	var buf bytes.Buffer
 	logger := slog.New(&allLevelHandler{sink: &buf, level: slog.LevelDebug})

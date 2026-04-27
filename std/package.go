@@ -16,7 +16,7 @@ type StdPackage struct {
 	modSlog  effectual.LuaMod[ModSlogApi]
 	modPath  effectual.LuaMod[ModPathApi]
 	modUrl   effectual.LuaMod[ModUrlApi]
-	modQuery effectual.LuaMod[serde.ModQueryApi]
+	modQuery effectual.LuaModDefinition
 }
 
 func NewStdPackage() *StdPackage {

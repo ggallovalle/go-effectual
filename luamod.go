@@ -17,7 +17,11 @@ type LuaMod[T any] interface {
 	Api(l *lua.State) T
 }
 
-func LuaModOpen[T any](l *lua.State, mod LuaMod[T]) T {
+func LuaModOpen(l *lua.State, mod LuaModDefinition) {
+	mod.OpenLib(l)
+}
+
+func LuaModOpenWithApi[T any](l *lua.State, mod LuaMod[T]) T {
 	mod.OpenLib(l)
 	return mod.Api(l)
 }
