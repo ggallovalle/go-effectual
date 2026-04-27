@@ -13,8 +13,6 @@ Archive a completed change in the experimental workflow.
 
 **Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
 
-Prefer `git mv` over plain mv to preserve git history
-
 **Steps**
 
 1. **If no change name provided, prompt for selection**
@@ -81,7 +79,7 @@ Prefer `git mv` over plain mv to preserve git history
    - If no: Move the change directory to archive
 
    ```bash
-   mv openspec/changes/<name> openspec/changes/archive/YYYY-MM-DD-<name>
+   git mv openspec/changes/<name> openspec/changes/archive/YYYY-MM-DD-<name>
    ```
 
 6. **Display summary**
