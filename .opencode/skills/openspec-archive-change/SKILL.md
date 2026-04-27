@@ -13,6 +13,8 @@ Archive a completed change in the experimental workflow.
 
 **Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
 
+Prefer `git mv` over plain mv to preserve git history
+
 **Steps**
 
 1. **If no change name provided, prompt for selection**
