@@ -7,25 +7,25 @@ local Suite = {
 			name = "Version: new() valid",
 			fn = function(ctx)
 				local v = semver.new("1.2.3")
-				ctx:expect(v, "expected version"):not_nil()
-				ctx:expect(v.major, "expected major == 1"):equals(1)
-				ctx:expect(v.minor, "expected minor == 2"):equals(2)
-				ctx:expect(v.patch, "expected patch == 3"):equals(3)
+				ctx:expect(v):not_nil()
+				ctx:expect(v.major):equals(1)
+				ctx:expect(v.minor):equals(2)
+				ctx:expect(v.patch):equals(3)
 			end,
 		},
 		{
 			name = "Version: new() invalid",
 			fn = function(ctx)
 				local ok, err = pcall(semver.new, "not-a-version")
-				ctx:expect(ok, "expected error"):is_false()
-				ctx:expect(err, "expected error message"):not_nil()
+				ctx:expect(ok):is_false()
+				ctx:expect(err):not_nil()
 			end,
 		},
 		{
 			name = "Version: __tostring",
 			fn = function(ctx)
 				local v = semver.new("2.3.4")
-				ctx:expect(tostring(v), "expected '2.3.4'"):equals("2.3.4")
+				ctx:expect(tostring(v)):equals("2.3.4")
 			end,
 		},
 		{
@@ -33,8 +33,8 @@ local Suite = {
 			fn = function(ctx)
 				local v1 = semver.new("1.0.0")
 				local v2 = semver.new("2.0.0")
-				ctx:expect(v1 < v2, "expected 1.0.0 < 2.0.0"):is_true()
-				ctx:expect(v2 < v1, "expected 2.0.0 not < 1.0.0"):is_false()
+				ctx:expect(v1 < v2):is_true()
+				ctx:expect(v2 < v1):is_false()
 			end,
 		},
 		{
@@ -42,9 +42,9 @@ local Suite = {
 			fn = function(ctx)
 				local v1 = semver.new("1.0.0")
 				local v2 = semver.new("2.0.0")
-				ctx:expect(v1 <= v2, "expected 1.0.0 <= 2.0.0"):is_true()
-				ctx:expect(v1 <= v1, "expected 1.0.0 <= 1.0.0"):is_true()
-				ctx:expect(v2 <= v1, "expected 2.0.0 not <= 1.0.0"):is_false()
+				ctx:expect(v1 <= v2):is_true()
+				ctx:expect(v1 <= v1):is_true()
+				ctx:expect(v2 <= v1):is_false()
 			end,
 		},
 		{
@@ -53,23 +53,23 @@ local Suite = {
 				local v1 = semver.new("1.0.0")
 				local v2 = semver.new("1.0.0")
 				local v3 = semver.new("2.0.0")
-				ctx:expect(v1 == v2, "expected 1.0.0 == 1.0.0"):is_true()
-				ctx:expect(v1 == v3, "expected 1.0.0 ~= 2.0.0"):is_false()
+				ctx:expect(v1 == v2):is_true()
+				ctx:expect(v1 == v3):is_false()
 			end,
 		},
 		{
 			name = "Range: range_new() valid",
 			fn = function(ctx)
 				local r = semver.range_new(">=1.0.0 <2.0.0")
-				ctx:expect(r, "expected range"):not_nil()
+				ctx:expect(r):not_nil()
 			end,
 		},
 		{
 			name = "Range: range_new() invalid",
 			fn = function(ctx)
 				local ok, err = pcall(semver.range_new, "not-a-range")
-				ctx:expect(ok, "expected error"):is_false()
-				ctx:expect(err, "expected error message"):not_nil()
+				ctx:expect(ok):is_false()
+				ctx:expect(err):not_nil()
 			end,
 		},
 		{
@@ -78,8 +78,8 @@ local Suite = {
 				local r = semver.range_new(">=1.0.0 <2.0.0")
 				local v1 = semver.new("1.5.0")
 				local v2 = semver.new("2.0.0")
-				ctx:expect(r:contains(v1), "expected 1.5.0 to be contained"):is_true()
-				ctx:expect(r:contains(v2), "expected 2.0.0 not to be contained"):is_false()
+				ctx:expect(r:contains(v1)):is_true()
+				ctx:expect(r:contains(v2)):is_false()
 			end,
 		},
 		{
@@ -90,8 +90,8 @@ local Suite = {
 				local r = r1:intersect(r2)
 				local v1 = semver.new("1.5.0")
 				local v2 = semver.new("2.0.0")
-				ctx:expect(r:contains(v1), "expected 1.5.0 to be contained"):is_true()
-				ctx:expect(r:contains(v2), "expected 2.0.0 not to be contained"):is_false()
+				ctx:expect(r:contains(v1)):is_true()
+				ctx:expect(r:contains(v2)):is_false()
 			end,
 		},
 		{
@@ -103,9 +103,9 @@ local Suite = {
 				local v1 = semver.new("0.5.0")
 				local v2 = semver.new("2.5.0")
 				local v3 = semver.new("1.5.0")
-				ctx:expect(r:contains(v1), "expected 0.5.0 to be contained"):is_true()
-				ctx:expect(r:contains(v2), "expected 2.5.0 to be contained"):is_true()
-				ctx:expect(r:contains(v3), "expected 1.5.0 not to be contained"):is_false()
+				ctx:expect(r:contains(v1)):is_true()
+				ctx:expect(r:contains(v2)):is_true()
+				ctx:expect(r:contains(v3)):is_false()
 			end,
 		},
 	},
