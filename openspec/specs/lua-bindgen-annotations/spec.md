@@ -1,78 +1,92 @@
-## ADDED Requirements
+## MODIFIED Requirements
 
-### Requirement: Annotation syntax
-The generator SHALL parse block comments containing `@lua-bindgen.sh` directly preceding a type declaration. The annotation block uses key=value syntax with comma-separated lists for multi-value options:
+### Requirement: Inline annotation syntax
+The generator SHALL parse inline `//lua:` annotations that appear directly preceding their target declaration. Each annotation lives on the member it affects.
 
-```
-//go:build lua_bindgen
-// +lua-bindgen.sh skip-fields=params nil-map=Get force-method=ToString,Keys,Values,Entries module=std.serde.query
+```go
+//lua: module std.serde.query
 
+//lua: class Query
 type Query struct {
-    // ...
+    params url.Values //lua: skip
 }
+
+//lua: nil-map
+func (q *Query) Get(key string) string
+
+//lua: force-method
+func (q *Query) ToString() string
+
+//lua: module-fn new
+func NewQuery() *Query
 ```
 
-#### Scenario: Single-value annotation
-- **WHEN** annotation contains `module=std.serde.query`
-- **THEN** the generator uses `std.serde.query` as the module name
+#### Scenario: Class annotation
+- **WHEN** a struct has `//lua: class ClassName` annotation
+- **THEN** the generator creates Lua class annotations for that type
 
-#### Scenario: Multi-value annotation
-- **WHEN** annotation contains `force-method=ToString,Keys,Values,Entries`
-- **THEN** the generator forces methods ToString, Keys, Values, and Entries to be methods (not getters)
+#### Scenario: Module function annotation
+- **WHEN** a function has `//lua: module-fn functionName` annotation
+- **THEN** the generator creates a module-level function named `functionName`
 
-#### Scenario: Mixed single and multi-value annotations
-- **WHEN** annotation contains `skip-fields=params module=std.serde.query`
-- **THEN** both skip-fields and module are set correctly
+#### Scenario: Instance method annotation
+- **WHEN** a method has `//lua: nil-map` annotation
+- **THEN** the generator marks that method as mapping empty string to nil
+
+#### Scenario: Field annotation
+- **WHEN** a struct field has `//lua: skip` annotation
+- **THEN** the generator skips that field in bindings
+
+#### Scenario: Raw implementation
+- **WHEN** a function has `//lua: raw` annotation
+- **THEN** the generator uses the function implementation verbatim without wrapping
+
+### Requirement: Metamethod annotation
+The generator SHALL parse `//lua: metamethod` annotations on functions to register them as Lua metamethods.
+
+```go
+//lua: metamethod __tostring
+//lua: raw
+func QueryToString(l *lua.State) int { ... }
+```
+
+#### Scenario: Metamethod registration
+- **WHEN** a function has `//lua: metamethod __name` annotation (e.g., `__tostring`, `__pairs`)
+- **THEN** the generator registers the function as that metamethod
+
+#### Scenario: Raw metamethod
+- **WHEN** a function has both `//lua: metamethod __name` and `//lua: raw` annotations
+- **THEN** the generator uses the exact implementation for the metamethod
 
 ### Requirement: Supported annotation keys
 The generator SHALL support the following annotation keys:
-- `skip-fields`: comma-separated list of struct field names to skip
-- `nil-map`: comma-separated list of method names that map empty string to nil
-- `force-method`: comma-separated list of method names to force as methods
-- `skip`: comma-separated list of method names to skip
-- `module`: Lua module name
+- `module`: Lua module name (on package)
+- `class`: marks a type as a Lua class within the module
+- `module-fn`: marks a function as a module-level function with the given Lua name (e.g., `//lua: module-fn new` on function `NewQuery` creates `query.new()`)
+- `nil-map`: marks a method as mapping empty string to nil
+- `force-method`: marks a method to be forced as a method (not getter)
+- `skip`: marks a method or field to be skipped from bindings
+- `metamethod`: marks a function as a metamethod with the given full name (e.g., `__tostring`, `__pairs`)
+- `raw`: indicates the function implementation should be used verbatim
 
 #### Scenario: All supported keys present
-- **WHEN** annotation contains `skip-fields=x nil-map=y force-method=a,b,c skip=d module=e`
-- **THEN** all corresponding configuration fields are set
-
-#### Scenario: Unknown annotation key
-- **WHEN** annotation contains `unknown-key=value`
-- **THEN** the generator SHALL ignore the unknown key with a warning
-
-### Requirement: Build tag requirement
-Annotations SHALL only be active when the file has a `//go:build lua_bindgen` build constraint or the annotation block includes `// +lua-bindgen.sh` (which serves as its own constraint marker).
-
-#### Scenario: Build tag present
-- **WHEN** source file contains `//go:build lua_bindgen` before annotation
-- **THEN** annotations are processed
-
-#### Scenario: Only annotation marker present
-- **WHEN** source file contains `// +lua-bindgen.sh` annotation marker
-- **THEN** annotations are processed
+- **WHEN** various members have the supported annotations
+- **THEN** all corresponding configuration fields are set correctly
 
 ### Requirement: CLI precedence
 CLI flags SHALL take precedence over annotation values. When both CLI flag and annotation specify the same option, the CLI flag value SHALL be used.
 
-#### Scenario: CLI overrides module
+#### Scenario: CLI overrides annotation
 - **WHEN** CLI provides `--module cli.module` and annotation provides `module=anno.module`
 - **THEN** the generator uses `cli.module`
 
-#### Scenario: CLI overrides skip-fields
-- **WHEN** CLI provides `--skip-fields cli_param` and annotation provides `skip-fields=anno_param`
-- **THEN** the generator skips `cli_param` not `anno_param`
-
-#### Scenario: Annotation used when no CLI
-- **WHEN** CLI does not provide `--skip-fields` and annotation provides `skip-fields=params`
-- **THEN** the generator uses the annotation value `params`
-
 ### Requirement: Annotation parsing location
-The generator SHALL parse annotations in `internal/luagen/parser.go` during `ParseSource()`. Annotations SHALL be extracted from the type's preceding block comment and returned as a partial `GenConfig`.
+The generator SHALL parse annotations in `internal/luagen/parser.go` during `ParseSource()`. Inline annotations are extracted from the member's preceding comment and stored in `GenConfig`.
 
 #### Scenario: Multiple types in same file
 - **WHEN** file defines multiple types with annotations
 - **THEN** each type's annotation only configures its own bindings
 
 #### Scenario: Type without annotation
-- **WHEN** type has no preceding `@lua-bindgen.sh` annotation block
+- **WHEN** type has no preceding annotations
 - **THEN** generator uses only CLI flag configuration (no error)
