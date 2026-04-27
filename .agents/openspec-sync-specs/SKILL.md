@@ -5,13 +5,12 @@ license: MIT
 compatibility: Requires openspec CLI.
 metadata:
   author: openspec
-  version: "1.0"
-  generatedBy: "1.3.1"
+  version: "2.0"
 ---
 
 Sync delta specs from a change to the main specs.
 
-**Input**: Change name (required). If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
+**Input**: Change name (required). If omitted, check if it can be inferred from conversation context.
 
 **Steps**
 
@@ -20,29 +19,28 @@ Sync delta specs from a change to the main specs.
    If a name is provided, use it. Otherwise:
    - Infer from conversation context if the user mentioned a change
    - Run `openspec list --json` to get available changes
-   - Filter to changes that have delta specs at `openspec/changes/<name>/specs/`
    - Use the **AskUserQuestion tool** to let the user select
 
    Always announce: "Using change: <name>"
 
 2. **Read delta specs**
 
-   Read all delta spec files from `openspec/changes/<name>/specs/**/spec.md`
+   Read all delta spec files from `openspec/changes/<name>/specs/**/*.typ`
 
-   For each delta spec, parse section headers to identify operation types:
-   - `## ADDED Requirements` → add operations
-   - `## MODIFIED Requirements` → modify operations
-   - `## REMOVED Requirements` → remove operations
-   - `## RENAMED Requirements` → rename operations
+   For each delta spec, parse the Typst content to identify operation types:
+   - Look for `## ADDED Requirements` → add operations
+   - Look for `## MODIFIED Requirements` → modify operations
+   - Look for `## REMOVED Requirements` → remove operations
+   - Look for `## RENAMED Requirements` → rename operations
 
 3. **Read main specs**
 
    For each capability in delta specs:
-   - Check if main spec exists at `openspec/specs/<capability>/spec.md`
+   - Check if main spec exists at `openspec/specs/<capability>/spec.typ`
    - If exists, read and parse it
    - If not exists, treat as new capability
 
-4. **Reconcile**
+4. **Reconcile at requirement level**
 
    Process each delta spec:
 
@@ -58,15 +56,17 @@ Sync delta specs from a change to the main specs.
    - If requirement exists in main spec → remove it
 
    **For RENAMED requirements:**
-   - Parse FROM:/TO: format
+   - Parse the FROM:/TO: format
    - If FROM requirement exists → rename to TO
 
    **For new capability:**
-   - Create new main spec file at `openspec/specs/<capability>/spec.md`
+   - Create new main spec file at `openspec/specs/<capability>/spec.typ`
 
 5. **Write main specs**
 
-   Write reconciled spec back to `openspec/specs/<capability>/spec.md`
+   Write reconciled spec back to `openspec/specs/<capability>/spec.typ`
+
+   Use Typst format with proper structure.
 
 6. **Verify idempotency**
 
@@ -98,19 +98,10 @@ Sync delta specs from a change to the main specs.
 **Specs:** No changes needed - main specs match delta specs
 ```
 
-**Output On Error**
-
-```
-## Sync Failed
-
-**Error:** <error message>
-
-Retry or contact support.
-```
-
 **Guardrails**
-- Always prompt for change selection if not provided or ambiguous
+- Always prompt for change selection if not provided
 - Preserve requirement content exactly as specified in delta
 - Idempotent: running multiple times produces same result
 - Show clear summary of what was applied per capability
 - If no delta specs exist for a change, report and exit
+- Use Typst format for all output files (.typ extension)
