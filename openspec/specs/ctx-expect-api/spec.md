@@ -3,6 +3,8 @@
 ### Requirement: ctx.expect creates expect object
 The test context SHALL provide an `expect(value, msg?)` method that returns an expect object. The value is the actual value under test. The optional msg is a string used in failure messages.
 
+The `expect` object SHALL provide exactly 6 methods for assertions: `is_nil()`, `not_nil()`, `is_true()`, `is_false()`, `equals(other)`, and `not_equals(other)`.
+
 #### Scenario: expect with value only
 - **WHEN** caller invokes `ctx.expect(someValue)`
 - **THEN** expect object is returned with value set and no message
@@ -75,50 +77,6 @@ The expect object SHALL provide `not_equals(other)` that asserts the value does 
 
 #### Scenario: not_equals fails on equal values
 - **WHEN** caller invokes `expect(1):not_equals(1)`
-- **THEN** assertion fails
-
-### Requirement: is_lt assertion
-The expect object SHALL provide `is_lt(other)` that asserts the value is less than the other value using Lua `<`. Fails if value is not less than other.
-
-#### Scenario: is_lt passes when value is less
-- **WHEN** caller invokes `expect(1):is_lt(2)`
-- **THEN** assertion passes
-
-#### Scenario: is_lt fails when value is not less
-- **WHEN** caller invokes `expect(2):is_lt(1)`
-- **THEN** assertion fails
-
-### Requirement: not_lt assertion
-The expect object SHALL provide `not_lt(other)` that asserts the value is not less than the other value. Fails if value is less than other.
-
-#### Scenario: not_lt passes when value is not less
-- **WHEN** caller invokes `expect(2):not_lt(1)`
-- **THEN** assertion passes
-
-#### Scenario: not_lt fails when value is less
-- **WHEN** caller invokes `expect(1):not_lt(2)`
-- **THEN** assertion fails
-
-### Requirement: is_le assertion
-The expect object SHALL provide `is_le(other)` that asserts the value is less than or equal to the other value using Lua `<=`. Fails if value is greater than other.
-
-#### Scenario: is_le passes when value is less or equal
-- **WHEN** caller invokes `expect(1):is_le(1)`
-- **THEN** assertion passes
-
-#### Scenario: is_le fails when value is greater
-- **WHEN** caller invokes `expect(2):is_le(1)`
-- **THEN** assertion fails
-
-### Requirement: not_le assertion
-The expect object SHALL provide `not_le(other)` that asserts the value is not less than or equal to the other value. Fails if value is less than or equal to other.
-
-#### Scenario: not_le passes when value is greater
-- **WHEN** caller invokes `expect(2):not_le(1)`
-- **THEN** assertion passes
-
-#### Scenario: not_le fails when value is less or equal
-- **WHEN** caller invokes `expect(1):not_le(1)`
 - **THEN** assertion fails
 
 ### Requirement: failure messages include context, source location, expression, and variable values
