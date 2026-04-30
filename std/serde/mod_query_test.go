@@ -3,9 +3,9 @@ package serde_test
 import (
 	"testing"
 
-	lua "github.com/speedata/go-lua"
-	sut "github.com/ggallovalle/go-effectual/std/serde"
 	"github.com/ggallovalle/go-effectual"
+	sut "github.com/ggallovalle/go-effectual/std/serde"
+	lua "github.com/speedata/go-lua"
 	"github.com/stretchr/testify/assert"
 )
 

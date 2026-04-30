@@ -16,10 +16,13 @@ func Classify(info *TypeInfo, cfg *GenConfig) {
 			m.IsNilMap = true
 		}
 
-		m.IsGetter = isGetter(m, cfg)
+		if info.Module != "" {
+			classifyModuleMethod(m)
+		} else {
+			m.IsGetter = isGetter(m, cfg)
+		}
 	}
 
-	// Mark skipped fields
 	for i := range info.Fields {
 		if cfg.IsFieldSkipped(info.Fields[i].Name) {
 			info.Fields[i].IsSkipped = true
@@ -41,4 +44,21 @@ func isGetter(m *MethodInfo, cfg *GenConfig) bool {
 		return false
 	}
 	return true
+}
+
+func isGoLuaFunction(m *MethodInfo) bool {
+	return m.PtrType == "lua.State" && len(m.Params) == 1 && m.ReturnKind == ReturnPointer
+}
+
+func classifyModuleMethod(m *MethodInfo) {
+	if m.Method {
+		return
+	}
+	if isGoLuaFunction(m) {
+		m.IsVerbatim = true
+		return
+	}
+	if len(m.Params) == 0 && m.ReturnKind != ReturnVoid && m.ReturnKind != ReturnComplex {
+		m.IsField = true
+	}
 }

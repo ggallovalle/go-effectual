@@ -183,8 +183,8 @@ func TestVfsScoped_SymlinkEscapes(t *testing.T) {
 		path    string
 		wantErr bool
 	}{
-		{"symlink to outside", "link_to_outside", true},   // target escapes scope
-		{"symlink to inside", "link_to_inside", false},    // target inside scope
+		{"symlink to outside", "link_to_outside", true}, // target escapes scope
+		{"symlink to inside", "link_to_inside", false},  // target inside scope
 	}
 
 	for _, tt := range tests {

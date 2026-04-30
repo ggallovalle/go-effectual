@@ -6,13 +6,13 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/speedata/go-lua"
 	"github.com/ggallovalle/go-effectual"
+	"github.com/speedata/go-lua"
 )
 
 const (
-	posixSep          = "/"
-	winSep            = "\\"
+	posixSep       = "/"
+	winSep         = "\\"
 	slugPathHandle = "go/std/path/Path*"
 )
 

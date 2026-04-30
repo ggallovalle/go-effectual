@@ -5,8 +5,8 @@ import (
 
 	lua "github.com/speedata/go-lua"
 
-	sut "github.com/ggallovalle/go-effectual/std"
 	"github.com/ggallovalle/go-effectual"
+	sut "github.com/ggallovalle/go-effectual/std"
 	"github.com/stretchr/testify/assert"
 )
 

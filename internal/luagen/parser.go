@@ -4,16 +4,21 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"path/filepath"
 	"strings"
 )
 
 type MethodComment struct {
-	Skip       bool
-	NilMap     bool
-	Module     string
-	Metamethod string
+	Skip        bool
+	NilMap      bool
+	Module      string
+	Metamethod  string
 	ForceMethod bool
-	Raw        bool
+	Method      bool
+	Name        string
+	Raises      bool
+	RaisesType  string
+	Raw         bool
 }
 
 type FuncComment struct {
@@ -22,18 +27,30 @@ type FuncComment struct {
 	Raw        bool
 }
 
+type EmmyComment struct {
+	Doc        string
+	Deprecated string
+	See        string
+	Version    string
+	Alias      string
+	Enum       string
+}
+
 var validAnnotationKeys = map[string]bool{
-	"skip-fields":  true,
-	"nil-map":      true,
-	"force-method": true,
-	"skip":         true,
-	"module":       true,
-	"skip-field":   true,
+	"skip-fields":   true,
+	"nil-map":       true,
+	"force-method":  true,
+	"skip":          true,
+	"module":        true,
+	"skip-field":    true,
 	"nil-map-field": true,
-	"class":        true,
-	"module-fn":    true,
-	"metamethod":   true,
-	"raw":          true,
+	"class":         true,
+	"module-fn":     true,
+	"metamethod":    true,
+	"raw":           true,
+	"method":        true,
+	"name":          true,
+	"raises":        true,
 }
 
 func ParseSource(sourceFile string, typeName string) (*TypeInfo, *GenConfigAnnotation, error) {
@@ -52,12 +69,14 @@ func ParseSource(sourceFile string, typeName string) (*TypeInfo, *GenConfigAnnot
 
 	info.Class = annotations.Class
 
-	// Extract package-level module annotation (only if not already set from type annotation)
 	if annotations.Module == "" {
-		annotations.Module = extractPackageModule(node)
+		info.Module = extractPackageModule(node)
+	} else {
+		info.Module = annotations.Module
 	}
 
 	methodComments := extractMethodComments(node, typeName)
+	emmyComments := extractEmmyComments(node, typeName)
 
 	for _, decl := range node.Decls {
 		funcDecl, ok := decl.(*ast.FuncDecl)
@@ -92,14 +111,37 @@ func ParseSource(sourceFile string, typeName string) (*TypeInfo, *GenConfigAnnot
 		params := extractParams(funcDecl.Type.Params)
 		returnType, returnKind, ptrType := extractReturn(funcDecl.Type.Results)
 
+		errorType := ""
+		if returnKind == ReturnTuple {
+			errorType = ptrType
+		}
+
+		pos := fset.Position(funcDecl.Pos())
+		sourceFile := filepath.Base(sourceFile)
+
+		emmy := emmyComments[methodName]
+
 		info.Methods = append(info.Methods, MethodInfo{
-			Name:       methodName,
-			Params:     params,
-			ReturnType: returnType,
-			ReturnKind: returnKind,
-			PtrType:    ptrType,
-			IsNilMap:   comments.NilMap,
-			IsForceMethod: comments.ForceMethod,
+			Name:           methodName,
+			Params:         params,
+			ReturnType:     returnType,
+			ReturnKind:     returnKind,
+			PtrType:        ptrType,
+			IsNilMap:       comments.NilMap,
+			IsForceMethod:  comments.ForceMethod,
+			Method:         comments.Method,
+			LuaName:        comments.Name,
+			Raises:         comments.Raises,
+			RaisesType:     comments.RaisesType,
+			ErrorType:      errorType,
+			SourceFile:     sourceFile,
+			SourceLine:     pos.Line,
+			EmmyDoc:        emmy.Doc,
+			EmmyDeprecated: emmy.Deprecated,
+			EmmySee:        emmy.See,
+			EmmyVersion:    emmy.Version,
+			EmmyAlias:      emmy.Alias,
+			EmmyEnum:       emmy.Enum,
 		})
 	}
 
@@ -411,7 +453,15 @@ func extractReturn(fl *ast.FieldList) (string, ReturnKind, string) {
 	if fl == nil || len(fl.List) == 0 {
 		return "", ReturnVoid, ""
 	}
-	if len(fl.List) > 1 {
+	if len(fl.List) == 2 {
+		valTypeStr := exprString(fl.List[0].Type)
+		errTypeStr := exprString(fl.List[1].Type)
+		if errTypeStr == "error" {
+			return valTypeStr, ReturnTuple, "error"
+		}
+		return "", ReturnComplex, ""
+	}
+	if len(fl.List) > 2 {
 		return "", ReturnComplex, ""
 	}
 	field := fl.List[0]
@@ -475,6 +525,18 @@ func extractMethodComments(node *ast.File, typeName string) map[string]MethodCom
 			if line == "//lua: raw" || line == "//lua:raw" || line == "lua: raw" || line == "lua:raw" {
 				mc.Raw = true
 			}
+			if line == "//lua:method" || line == "//lua: method" || line == "lua:method" || line == "lua: method" {
+				mc.Method = true
+			}
+			if strings.HasPrefix(line, "//lua:name ") {
+				mc.Name = strings.TrimSpace(strings.TrimPrefix(line, "//lua:name "))
+			} else if strings.HasPrefix(line, "//lua: name ") {
+				mc.Name = strings.TrimSpace(strings.TrimPrefix(line, "//lua: name "))
+			} else if strings.HasPrefix(line, "lua:name ") {
+				mc.Name = strings.TrimSpace(strings.TrimPrefix(line, "lua:name "))
+			} else if strings.HasPrefix(line, "lua: name ") {
+				mc.Name = strings.TrimSpace(strings.TrimPrefix(line, "lua: name "))
+			}
 			if strings.HasPrefix(line, "//lua:metamethod ") {
 				mc.Metamethod = strings.TrimSpace(strings.TrimPrefix(line, "//lua:metamethod "))
 			} else if strings.HasPrefix(line, "//lua: metamethod ") {
@@ -482,9 +544,79 @@ func extractMethodComments(node *ast.File, typeName string) map[string]MethodCom
 			} else if strings.HasPrefix(line, "lua:metamethod ") {
 				mc.Metamethod = strings.TrimSpace(strings.TrimPrefix(line, "lua:metamethod "))
 			}
+			if strings.HasPrefix(line, "//lua:raises ") {
+				mc.Raises = true
+				mc.RaisesType = strings.TrimSpace(strings.TrimPrefix(line, "//lua:raises "))
+			} else if strings.HasPrefix(line, "//lua: raises ") {
+				mc.Raises = true
+				mc.RaisesType = strings.TrimSpace(strings.TrimPrefix(line, "//lua: raises "))
+			} else if strings.HasPrefix(line, "lua:raises ") {
+				mc.Raises = true
+				mc.RaisesType = strings.TrimSpace(strings.TrimPrefix(line, "lua:raises "))
+			} else if strings.HasPrefix(line, "lua: raises ") {
+				mc.Raises = true
+				mc.RaisesType = strings.TrimSpace(strings.TrimPrefix(line, "lua: raises "))
+			}
 		}
-		if mc.Skip || mc.NilMap || mc.ForceMethod || mc.Metamethod != "" || mc.Raw {
+		if mc.Skip || mc.NilMap || mc.ForceMethod || mc.Method || mc.Name != "" || mc.Metamethod != "" || mc.Raises || mc.Raw {
 			comments[funcDecl.Name.Name] = mc
+		}
+	}
+	return comments
+}
+
+func extractEmmyComments(node *ast.File, typeName string) map[string]EmmyComment {
+	comments := make(map[string]EmmyComment)
+
+	for _, decl := range node.Decls {
+		funcDecl, ok := decl.(*ast.FuncDecl)
+		if !ok || !isMethodOf(funcDecl, typeName) {
+			continue
+		}
+		if funcDecl.Doc == nil {
+			continue
+		}
+		text := funcDecl.Doc.Text()
+		ec := EmmyComment{}
+		for _, line := range strings.Split(text, "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "//emmylua:doc ") {
+				ec.Doc = strings.TrimSpace(strings.TrimPrefix(line, "//emmylua:doc "))
+			} else if strings.HasPrefix(line, "//emmylua: doc ") {
+				ec.Doc = strings.TrimSpace(strings.TrimPrefix(line, "//emmylua: doc "))
+			} else if strings.HasPrefix(line, "emmylua:doc ") {
+				ec.Doc = strings.TrimSpace(strings.TrimPrefix(line, "emmylua:doc "))
+			} else if strings.HasPrefix(line, "emmylua: doc ") {
+				ec.Doc = strings.TrimSpace(strings.TrimPrefix(line, "emmylua: doc "))
+			}
+			if strings.HasPrefix(line, "//emmylua:deprecated ") {
+				ec.Deprecated = strings.TrimSpace(strings.TrimPrefix(line, "//emmylua:deprecated "))
+			} else if strings.HasPrefix(line, "//emmylua: deprecated ") {
+				ec.Deprecated = strings.TrimSpace(strings.TrimPrefix(line, "//emmylua: deprecated "))
+			}
+			if strings.HasPrefix(line, "//emmylua:see ") {
+				ec.See = strings.TrimSpace(strings.TrimPrefix(line, "//emmylua:see "))
+			} else if strings.HasPrefix(line, "//emmylua: see ") {
+				ec.See = strings.TrimSpace(strings.TrimPrefix(line, "//emmylua: see "))
+			}
+			if strings.HasPrefix(line, "//emmylua:version ") {
+				ec.Version = strings.TrimSpace(strings.TrimPrefix(line, "//emmylua:version "))
+			} else if strings.HasPrefix(line, "//emmylua: version ") {
+				ec.Version = strings.TrimSpace(strings.TrimPrefix(line, "//emmylua: version "))
+			}
+			if strings.HasPrefix(line, "//emmylua:alias ") {
+				ec.Alias = strings.TrimSpace(strings.TrimPrefix(line, "//emmylua:alias "))
+			} else if strings.HasPrefix(line, "//emmylua: alias ") {
+				ec.Alias = strings.TrimSpace(strings.TrimPrefix(line, "//emmylua: alias "))
+			}
+			if strings.HasPrefix(line, "//emmylua:enum ") {
+				ec.Enum = strings.TrimSpace(strings.TrimPrefix(line, "//emmylua:enum "))
+			} else if strings.HasPrefix(line, "//emmylua: enum ") {
+				ec.Enum = strings.TrimSpace(strings.TrimPrefix(line, "//emmylua: enum "))
+			}
+		}
+		if ec.Doc != "" || ec.Deprecated != "" || ec.See != "" || ec.Version != "" || ec.Alias != "" || ec.Enum != "" {
+			comments[funcDecl.Name.Name] = ec
 		}
 	}
 	return comments

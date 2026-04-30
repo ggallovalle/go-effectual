@@ -3,9 +3,9 @@ package std_test
 import (
 	"testing"
 
-	lua "github.com/speedata/go-lua"
-	sut "github.com/ggallovalle/go-effectual/std"
 	"github.com/ggallovalle/go-effectual"
+	sut "github.com/ggallovalle/go-effectual/std"
+	lua "github.com/speedata/go-lua"
 	"github.com/stretchr/testify/assert"
 )
 

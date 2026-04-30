@@ -1,36 +1,36 @@
 ## 1. Parser Updates
 
-- [ ] 1.1 Add `Module`, `Class`, `Method`, `Name` to annotation types in `internal/luagen/types.go`
-- [ ] 1.2 Parse `//lua: module <path>` annotation in `internal/luagen/parser.go`
-- [ ] 1.3 Parse `//lua: class <TypeName>` annotation in `internal/luagen/parser.go`
-- [ ] 1.4 Parse `//lua: method` (forces no-arg method to be method, overriding default field inference) and `//lua: name <name>` annotations in `internal/luagen/parser.go`
-- [ ] 1.5 Implement inference: no params → field, has params → method
+- [x] 1.1 Add `Module`, `Class`, `Method`, `Name` to annotation types in `internal/luagen/types.go`
+- [x] 1.2 Parse `//lua: module <path>` annotation in `internal/luagen/parser.go`
+- [x] 1.3 Parse `//lua: class <TypeName>` annotation in `internal/luagen/parser.go`
+- [x] 1.4 Parse `//lua: method` (forces no-arg method to be method, overriding default field inference) and `//lua: name <name>` annotations in `internal/luagen/parser.go`
+- [x] 1.5 Implement inference: no params → field, has params → method
 
 ## 2. Signature Inference
 
-- [ ] 2.1 Add function to detect `(*lua.State) int` signature (go-lua function marker)
-- [ ] 2.2 Add function to classify return types for wrapping
-- [ ] 2.3 Add logic to emit `@return_overload` for `(value, error)` returns
+- [x] 2.1 Add function to detect `(*lua.State) int` signature (go-lua function marker)
+- [x] 2.2 Add function to classify return types for wrapping
+- [x] 2.3 Add logic to emit `@return_overload` for `(value, error)` returns
 
 ## 3. Generator Updates
 
-- [ ] 3.1 Generate module type from `//lua: module <path>` declaration — struct with fields (sep, altSep), Name(), Annotations(), Open() method
-- [ ] 3.2 Generate class type from `//lua: class <TypeName>` declaration — userdata with FromRaw, Get, Set methods and metatable registration
-- [ ] 3.3 Generate `Make<ModuleType>()` factory function — calls nativeSep(), returns module instance
-- [ ] 3.4 Generate wrapper for inferred fields (no params, non-lua.State return) — lua wrapper pushes name+value via SetTable
-- [ ] 3.5 Generate verbatim call for go-lua signatures — SetupPosix/SetupWin32 called directly in Open(), not wrapped
-- [ ] 3.6 Generate field setup in `Open()` method — iterate declared methods in order, call verbatim for go-lua sigs, set fields via SetTable
-- [ ] 3.7 Generate class methods with metamethod registration — lua.SetFunctions with method map, register `__index` metamethod
-- [ ] 3.8 Include fields and class methods in annotations template — emit `---@field` entries and `---@param`/`---@return` for methods
+- [x] 3.1 Generate module type from `//lua: module <path>` declaration — struct with fields (sep, altSep), Name(), Annotations(), Open() method (struct user-defined, not generated)
+- [x] 3.2 Generate class type from `//lua: class <TypeName>` declaration — userdata with FromRaw, Get, Set methods and metatable registration
+- [x] 3.3 Generate `Make<ModuleType>()` factory function — returns module instance
+- [x] 3.4 Generate wrapper for inferred fields (no params, non-lua.State return) — lua wrapper pushes name+value via SetTable
+- [x] 3.5 Generate verbatim call for go-lua signatures — SetupPosix/SetupWin32 called directly in Open(), not wrapped
+- [x] 3.6 Generate field setup in `Open()` method — iterate declared methods in order, call verbatim for go-lua sigs, set fields via SetTable
+- [x] 3.7 Generate class methods with metamethod registration — lua.SetFunctions with method map, register `__index` metamethod
+- [x] 3.8 Include fields and class methods in annotations template — emit `---@field` entries and `---@param`/`---@return` for methods
 
 ## 4. EmmyLua Annotation Generation
 
-- [ ] 4.1 Add `@return_overload` emission for Go error-returning functions
-- [ ] 4.2 Add auto-generated `@source` annotations pointing to Go source
-- [ ] 4.3 Parse `//lua: raises`, `//emmylua: doc`, `//emmylua: deprecated`, etc.
-- [ ] 4.4 Generate complete EmmyLua annotation files (`.lua` files)
-- [ ] 4.5 Include `@enum` and `@alias` generation when specified
-- [ ] 4.6 Generate `@meta` and `@module` markers
+- [x] 4.1 Add `@return_overload` emission for Go error-returning functions
+- [x] 4.2 Add auto-generated `@source` annotations pointing to Go source
+- [x] 4.3 Parse `//lua: raises`, `//emmylua: doc`, `//emmylua: deprecated`, etc. (raises done, emmylua done)
+- [x] 4.4 Generate complete EmmyLua annotation files (`.lua` files)
+- [x] 4.5 Include `@enum` and `@alias` generation when specified
+- [x] 4.6 Generate `@meta` and `@module` markers
 
 ## 5. Path Module Refactoring
 

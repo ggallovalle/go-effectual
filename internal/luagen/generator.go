@@ -24,6 +24,10 @@ func Generate(info *TypeInfo, cfg *GenConfig) string {
 		b.WriteString(")\n\n")
 	}
 
+	if info.Module != "" && info.Class == "" {
+		return generateModuleCode(info, cfg, b)
+	}
+
 	b.WriteString(fmt.Sprintf("const %s_HANDLE = \"%s\"\n\n", strings.ToUpper(info.Name), info.Handle))
 
 	b.WriteString(genToLua(info))
@@ -65,7 +69,6 @@ func Generate(info *TypeInfo, cfg *GenConfig) string {
 	b.WriteString(genLibrary(info))
 	b.WriteString("\n")
 
-	// Module-level code for class-annotated types
 	if info.Class != "" {
 		b.WriteString(genModuleStruct(info, cfg))
 		b.WriteString("\n")
@@ -82,15 +85,27 @@ func Generate(info *TypeInfo, cfg *GenConfig) string {
 	return b.String()
 }
 
+func generateModuleCode(info *TypeInfo, cfg *GenConfig, b strings.Builder) string {
+	b.WriteString(genModuleType(info, cfg))
+	b.WriteString("\n")
+	b.WriteString(genMakeModFunc(info, cfg))
+	b.WriteString("\n")
+	b.WriteString(genAnnotationsTemplate(info, cfg))
+	b.WriteString("\n")
+	b.WriteString(genModuleFuncWrappers(info))
+	b.WriteString("\n")
+	return b.String()
+}
+
 func collectImports(info *TypeInfo, cfg *GenConfig) []string {
 	imports := make(map[string]string)
 	imports["\"github.com/speedata/go-lua\""] = ""
 
-	if len(info.Metamethods) > 0 || info.Class != "" {
+	if len(info.Metamethods) > 0 || info.Class != "" || info.Module != "" {
 		imports["\"github.com/ggallovalle/go-effectual\""] = ""
 	}
 
-	if info.Class != "" {
+	if info.Class != "" || info.Module != "" {
 		imports["\"text/template\""] = ""
 		imports["\"strings\""] = ""
 	}
@@ -624,6 +639,127 @@ func (lib *%s) Require(l *lua.State) {
 `, modName, modName, modName, info.Name, info.Name, info.Name, modName, vn, strings.ToUpper(info.Name), vn, modName, modName)
 }
 
+func genModuleType(info *TypeInfo, cfg *GenConfig) string {
+	var b strings.Builder
+
+	b.WriteString(fmt.Sprintf(`
+func (lib *%s) Name() string {
+	return "%s"
+}
+
+func (lib *%s) Annotations() string {
+	data := map[string]string{
+		"module": lib.Name(),
+	}
+	var buf strings.Builder
+	if err := %sAnnotationsTmpl.Execute(&buf, data); err != nil {
+		return ""
+	}
+	return buf.String()
+}
+
+`, info.Name, info.Module, info.Name, info.Name+"AnnotationsTmpl"))
+
+	for _, m := range info.Methods {
+		if m.IsSkipped || m.IsGetter {
+			continue
+		}
+		if m.IsVerbatim {
+			b.WriteString(genVerbatimWrapper(info, m))
+		} else if m.IsField {
+			b.WriteString(genFieldWrapper(info, m))
+		} else {
+			b.WriteString(genMethodWrapper(info, m))
+		}
+	}
+
+	b.WriteString(fmt.Sprintf(`
+func (lib *%s) Open(l *lua.State) int {
+	lua.NewLibrary(l, []lua.RegistryFunction{})
+	moduleIdx := l.AbsIndex(-1)
+
+`, info.Name))
+
+	for _, m := range info.Methods {
+		if m.IsSkipped || m.IsGetter {
+			continue
+		}
+		if m.IsVerbatim {
+			b.WriteString(fmt.Sprintf("\tlib.%s(l)\n", m.Name))
+		} else if m.IsField {
+			fieldName := m.Name
+			if m.LuaName != "" {
+				fieldName = m.LuaName
+			} else {
+				fieldName = ToSnake(fieldName)
+			}
+			b.WriteString(fmt.Sprintf("\tl.PushString(\"%s\")\n", fieldName))
+			b.WriteString(fmt.Sprintf("\tl.PushString(lib.%s())\n", m.Name))
+			b.WriteString("\tl.SetTable(moduleIdx)\n")
+		} else {
+			wrapperName := fmt.Sprintf("lua%s%s", info.Name, m.Name)
+			if m.LuaName != "" {
+				b.WriteString(fmt.Sprintf("\tl.PushGoFunction(%s, \"%s\")\n", wrapperName, m.LuaName))
+			} else {
+				b.WriteString(fmt.Sprintf("\tl.PushGoFunction(%s)\n", wrapperName))
+			}
+			b.WriteString("\tl.SetTable(moduleIdx)\n")
+		}
+	}
+
+	b.WriteString("\treturn 1\n")
+	b.WriteString("}\n")
+
+	b.WriteString(fmt.Sprintf(`
+func (lib *%s) OpenLib(l *lua.State) {
+	lua.Require(l, lib.Name(), lib.Open, false)
+	l.Pop(1)
+}
+
+func (lib *%s) Require(l *lua.State) {
+	l.Global("require")
+	l.PushString(lib.Name())
+	l.Call(1, 1)
+}
+`, info.Name, info.Name))
+
+	return b.String()
+}
+
+func genFieldWrapper(info *TypeInfo, m MethodInfo) string {
+	fieldName := m.Name
+	if m.LuaName != "" {
+		fieldName = m.LuaName
+	} else {
+		fieldName = ToSnake(fieldName)
+	}
+	wrapperName := fmt.Sprintf("lua%s%s", info.Name, m.Name)
+	return fmt.Sprintf(`func %s(l *lua.State) int {
+	m := to%s(l, 1)
+	l.PushString("%s")
+	l.PushString(m.%s())
+	l.SetTable(-3)
+	return 0
+}
+
+`, wrapperName, info.Name, fieldName, m.Name)
+}
+
+func genVerbatimWrapper(info *TypeInfo, m MethodInfo) string {
+	return ""
+}
+
+func genMethodWrapper(info *TypeInfo, m MethodInfo) string {
+	vn := info.VarName()
+	wrapperName := fmt.Sprintf("lua%s%s", info.Name, m.Name)
+	return fmt.Sprintf(`func %s(l *lua.State) int {
+	%s := to%s(l, 1)
+	%s
+	%s
+}
+`, wrapperName, vn, info.Name, genParamExtract(m, vn), genMethodCall(info, m, vn))
+}
+
 func genMakeModFunc(info *TypeInfo, cfg *GenConfig) string {
 	modName := "Mod" + info.Name
 	return fmt.Sprintf(`func Make%s() effectual.LuaModDefinition {
@@ -634,13 +770,77 @@ func genMakeModFunc(info *TypeInfo, cfg *GenConfig) string {
 func genAnnotationsTemplate(info *TypeInfo, cfg *GenConfig) string {
 	tmplName := info.Name + "AnnotationsTmpl"
 
-	// Build the template string
 	var tmpl strings.Builder
 	tmpl.WriteString(fmt.Sprintf("var %s = template.Must(template.New(\"%s\").Parse(`", tmplName, info.Name))
 	tmpl.WriteString("---@meta {{.module}}\n\n")
+
+	if info.Module != "" && info.Class == "" {
+		genModuleAnnotationsTemplate(info, cfg, &tmpl)
+	} else {
+		genClassAnnotationsTemplate(info, cfg, &tmpl)
+	}
+
+	tmpl.WriteString("`))")
+	return tmpl.String()
+}
+
+func genModuleAnnotationsTemplate(info *TypeInfo, cfg *GenConfig, tmpl *strings.Builder) {
+	moduleName := info.Module
+	if moduleName == "" {
+		moduleName = "{{.module}}"
+	}
+
+	tmpl.WriteString(fmt.Sprintf("local %s = {}\n\n", strings.ToLower(info.Name[:1])))
+
+	for _, m := range info.Methods {
+		if m.IsSkipped || m.IsGetter {
+			continue
+		}
+		if m.IsField {
+			fieldName := m.Name
+			if m.LuaName != "" {
+				fieldName = m.LuaName
+			} else {
+				fieldName = ToSnake(fieldName)
+			}
+			returnType := luaMethodReturn(m)
+			if returnType != "" {
+				tmpl.WriteString(fmt.Sprintf("---@field %s %s\n", fieldName, returnType))
+			}
+		} else if !m.IsVerbatim {
+			luaName := m.Name
+			if m.LuaName != "" {
+				luaName = m.LuaName
+			} else {
+				luaName = ToSnake(luaName)
+			}
+			params := luaMethodParams(m)
+			if params != "" {
+				tmpl.WriteString(fmt.Sprintf("---@param %s\n", params))
+			}
+			emitReturnAnnotations(m, tmpl)
+			tmpl.WriteString(fmt.Sprintf("function %s.%s(%s) end\n\n", strings.ToLower(info.Name[:1]), luaName, luaMethodParamNames(m)))
+		}
+	}
+
+	for _, mf := range info.ModuleFuncs {
+		params := luaModuleFnParams(mf, info)
+		returnType := luaModuleFnReturn(mf, info)
+		if returnType != "" {
+			tmpl.WriteString(fmt.Sprintf("---@param %s\n", params))
+			tmpl.WriteString(fmt.Sprintf("---@return %s\n", returnType))
+		} else {
+			tmpl.WriteString(fmt.Sprintf("---@param %s\n", params))
+		}
+		tmpl.WriteString(fmt.Sprintf("function %s.%s(%s) end\n\n", strings.ToLower(info.Name[:1]), mf.LuaName, luaModuleFnParamNames(mf, info)))
+	}
+
+	tmpl.WriteString(fmt.Sprintf("return %s\n", strings.ToLower(info.Name[:1])))
+}
+
+func genClassAnnotationsTemplate(info *TypeInfo, cfg *GenConfig, tmpl *strings.Builder) {
 	tmpl.WriteString(fmt.Sprintf("---@class (exact) {{.%s}} : userdata\n", info.Name))
 
-	// Add fields
 	for _, f := range info.Fields {
 		if cfg.IsFieldSkipped(f.Name) || f.IsSkipped {
 			continue
@@ -653,7 +853,6 @@ func genAnnotationsTemplate(info *TypeInfo, cfg *GenConfig) string {
 
 	tmpl.WriteString(fmt.Sprintf("local %s = {}\n\n", info.Name))
 
-	// Add methods
 	for _, m := range info.Methods {
 		if m.IsSkipped {
 			continue
@@ -663,18 +862,13 @@ func genAnnotationsTemplate(info *TypeInfo, cfg *GenConfig) string {
 		}
 		luaMethodName := ToSnake(m.Name)
 		params := luaMethodParams(m)
-		returnType := luaMethodReturn(m)
-		if returnType != "" {
+		if params != "" {
 			tmpl.WriteString(fmt.Sprintf("---@param %s\n", params))
-			tmpl.WriteString(fmt.Sprintf("---@return %s\n", returnType))
-			tmpl.WriteString(fmt.Sprintf("function %s:%s(%s) end\n\n", info.Name, luaMethodName, luaMethodParamNames(m)))
-		} else {
-			tmpl.WriteString(fmt.Sprintf("---@param %s\n", params))
-			tmpl.WriteString(fmt.Sprintf("function %s:%s(%s) end\n\n", info.Name, luaMethodName, luaMethodParamNames(m)))
 		}
+		emitReturnAnnotations(m, tmpl)
+		tmpl.WriteString(fmt.Sprintf("function %s:%s(%s) end\n\n", info.Name, luaMethodName, luaMethodParamNames(m)))
 	}
 
-	// Add module functions
 	tmpl.WriteString(fmt.Sprintf("local %s = {}\n\n", strings.ToLower(info.Name[:1])))
 	for _, mf := range info.ModuleFuncs {
 		params := luaModuleFnParams(mf, info)
@@ -689,9 +883,6 @@ func genAnnotationsTemplate(info *TypeInfo, cfg *GenConfig) string {
 	}
 
 	tmpl.WriteString(fmt.Sprintf("return %s\n", strings.ToLower(info.Name[:1])))
-	tmpl.WriteString("`))")
-
-	return tmpl.String()
 }
 
 func genModuleFuncWrappers(info *TypeInfo) string {
@@ -806,8 +997,68 @@ func luaMethodReturn(m MethodInfo) string {
 		return m.PtrType + "[]"
 	case ReturnTupleSlice:
 		return "{[1]: string, [2]: string}[]"
+	case ReturnTuple:
+		return luaTupleReturnType(m)
 	}
 	return ""
+}
+
+func luaTupleReturnType(m MethodInfo) string {
+	if m.PtrType != "" {
+		return m.PtrType + "|nil"
+	}
+	switch m.ReturnType {
+	case "bool":
+		return "boolean"
+	case "int", "int64":
+		return "integer"
+	case "string":
+		return "string"
+	}
+	return m.ReturnType
+}
+
+func emitReturnAnnotations(m MethodInfo, tmpl *strings.Builder) {
+	emitEmmyAnnotations(m, tmpl)
+	if m.SourceFile != "" && m.SourceLine > 0 {
+		tmpl.WriteString(fmt.Sprintf("---@source %s:%d\n", m.SourceFile, m.SourceLine))
+	}
+	if m.ReturnKind == ReturnTuple {
+		tmpl.WriteString("---@return boolean success\n")
+		tmpl.WriteString(fmt.Sprintf("---@return %s\n", luaTupleReturnType(m)))
+		if m.Raises {
+			tmpl.WriteString(fmt.Sprintf("---@raises %s\n", m.RaisesType))
+		} else {
+			tmpl.WriteString("---@return_overload true, " + luaTupleReturnType(m) + "\n")
+			tmpl.WriteString("---@return_overload false, string\n")
+		}
+	} else {
+		returnType := luaMethodReturn(m)
+		if returnType != "" {
+			tmpl.WriteString(fmt.Sprintf("---@return %s\n", returnType))
+		}
+	}
+}
+
+func emitEmmyAnnotations(m MethodInfo, tmpl *strings.Builder) {
+	if m.EmmyDoc != "" {
+		tmpl.WriteString(fmt.Sprintf("---@doc %s\n", m.EmmyDoc))
+	}
+	if m.EmmyDeprecated != "" {
+		tmpl.WriteString(fmt.Sprintf("---@deprecated %s\n", m.EmmyDeprecated))
+	}
+	if m.EmmySee != "" {
+		tmpl.WriteString(fmt.Sprintf("---@see %s\n", m.EmmySee))
+	}
+	if m.EmmyVersion != "" {
+		tmpl.WriteString(fmt.Sprintf("---@version %s\n", m.EmmyVersion))
+	}
+	if m.EmmyAlias != "" {
+		tmpl.WriteString(fmt.Sprintf("---@alias %s\n", m.EmmyAlias))
+	}
+	if m.EmmyEnum != "" {
+		tmpl.WriteString(fmt.Sprintf("---@enum %s\n", m.EmmyEnum))
+	}
 }
 
 func luaMethodParamNames(m MethodInfo) string {

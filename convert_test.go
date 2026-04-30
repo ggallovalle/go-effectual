@@ -3,8 +3,8 @@ package effectual_test
 import (
 	"testing"
 
-	"github.com/speedata/go-lua"
 	sut "github.com/ggallovalle/go-effectual"
+	"github.com/speedata/go-lua"
 	"github.com/stretchr/testify/assert"
 )
 

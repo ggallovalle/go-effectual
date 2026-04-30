@@ -26,7 +26,7 @@ func TestExtractTypeAnnotations(t *testing.T) {
 			name:     "nil_map_and_force_method",
 			typeName: "Query",
 			want: &GenConfigAnnotation{
-				NilMap:       map[string]bool{"Get": true},
+				NilMap:      map[string]bool{"Get": true},
 				ForceMethod: map[string]bool{"ToString": true, "Keys": true},
 			},
 		},

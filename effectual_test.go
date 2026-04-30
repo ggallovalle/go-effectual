@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/BurntSushi/toml"
-	"github.com/speedata/go-lua"
 	"github.com/goccy/go-yaml"
+	"github.com/speedata/go-lua"
 	"github.com/stretchr/testify/assert"
 	"github.com/tailscale/hujson"
 	"github.com/twpayne/go-vfs"

@@ -15,12 +15,12 @@ type Query struct {
 	params url.Values //lua: skip-field
 }
 
-//lua: module-fn new
+// lua: module-fn new
 func NewQuery() *Query {
 	return &Query{params: url.Values{}}
 }
 
-//lua: module-fn deserialize
+// lua: module-fn deserialize
 func Deserialize(raw string) *Query {
 	q := NewQuery()
 	if raw != "" {
@@ -29,21 +29,21 @@ func Deserialize(raw string) *Query {
 	return q
 }
 
-//lua: module-fn serialize
+// lua: module-fn serialize
 func Serialize(q *Query) string {
 	return q.ToString()
 }
 
-//lua: metamethod __tostring
-//lua: raw
+// lua: metamethod __tostring
+// lua: raw
 func QueryToString(l *lua.State) int {
 	q := toQuery(l, 1)
 	l.PushString(q.ToString())
 	return 1
 }
 
-//lua: metamethod __pairs
-//lua: raw
+// lua: metamethod __pairs
+// lua: raw
 func QueryPairs(l *lua.State) int {
 	q := toQuery(l, 1)
 	q.Sort()
@@ -78,7 +78,7 @@ func (q *Query) Has(key string) bool {
 	return ok
 }
 
-//lua: nil-map
+// lua: nil-map
 func (q *Query) Get(key string) string {
 	vals := q.params[key]
 	if len(vals) == 0 {
@@ -116,12 +116,12 @@ func (q *Query) Sort() {
 	q.params = sorted
 }
 
-//lua: force-method
+// lua: force-method
 func (q *Query) ToString() string {
 	return q.params.Encode()
 }
 
-//lua: force-method
+// lua: force-method
 func (q *Query) Keys() []string {
 	keys := make([]string, 0, len(q.params))
 	for k := range q.params {
@@ -131,7 +131,7 @@ func (q *Query) Keys() []string {
 	return keys
 }
 
-//lua: force-method
+// lua: force-method
 func (q *Query) Values() []string {
 	keys := make([]string, 0, len(q.params))
 	for k := range q.params {
@@ -145,7 +145,7 @@ func (q *Query) Values() []string {
 	return vals
 }
 
-//lua: force-method
+// lua: force-method
 func (q *Query) Entries() [][2]string {
 	keys := make([]string, 0, len(q.params))
 	for k := range q.params {

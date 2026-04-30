@@ -15,12 +15,12 @@ type GenConfig struct {
 }
 
 type GenConfigAnnotation struct {
-	Module     string
-	Class      string
-	Skip       map[string]bool
-	NilMap     map[string]bool
+	Module      string
+	Class       string
+	Skip        map[string]bool
+	NilMap      map[string]bool
 	ForceMethod map[string]bool
-	SkipFields map[string]bool
+	SkipFields  map[string]bool
 }
 
 func (a *GenConfigAnnotation) IsEmpty() bool {
@@ -44,19 +44,35 @@ const (
 	ReturnPointer
 	ReturnPointerSlice
 	ReturnTupleSlice
+	ReturnTuple
 	ReturnComplex
 )
 
 type MethodInfo struct {
-	Name       string
-	Params     []ParamInfo
-	ReturnType string
-	ReturnKind ReturnKind
-	IsGetter   bool
-	IsSkipped  bool
-	IsNilMap   bool
-	IsForceMethod bool
-	PtrType    string
+	Name           string
+	Params         []ParamInfo
+	ReturnType     string
+	ReturnKind     ReturnKind
+	IsGetter       bool
+	IsSkipped      bool
+	IsNilMap       bool
+	IsForceMethod  bool
+	IsField        bool
+	IsVerbatim     bool
+	Method         bool
+	LuaName        string
+	PtrType        string
+	ErrorType      string
+	Raises         bool
+	RaisesType     string
+	SourceFile     string
+	SourceLine     int
+	EmmyDoc        string
+	EmmyDeprecated string
+	EmmySee        string
+	EmmyVersion    string
+	EmmyAlias      string
+	EmmyEnum       string
 }
 
 type FieldInfo struct {
@@ -66,27 +82,28 @@ type FieldInfo struct {
 }
 
 type ModuleFuncInfo struct {
-	Name     string
-	LuaName  string
-	Raw      bool
+	Name    string
+	LuaName string
+	Raw     bool
 }
 
 type MetamethodInfo struct {
-	Name     string
-	LuaName  string
-	Raw      bool
+	Name    string
+	LuaName string
+	Raw     bool
 }
 
 type TypeInfo struct {
-	Package    string
-	Name       string
-	Class      string
-	Methods    []MethodInfo
-	Fields     []FieldInfo
+	Package     string
+	Name        string
+	Class       string
+	Module      string
+	Methods     []MethodInfo
+	Fields      []FieldInfo
 	ModuleFuncs []ModuleFuncInfo
 	Metamethods []MetamethodInfo
-	Handle     string
-	ImportPkg  string
+	Handle      string
+	ImportPkg   string
 }
 
 func (c *GenConfig) IsSkipped(name string) bool {
